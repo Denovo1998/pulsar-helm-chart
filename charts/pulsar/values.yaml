@@ -27,7 +27,7 @@
 ## it will default to .Release.Namespace (aka helm --namespace).
 ## Please note that victoria-metrics-k8s-stack might not be able to scrape Pulsar component metrics by default unless
 ## it is deployed in the same namespace as Pulsar.
-namespace: ""
+namespace: "pulsar"
 namespaceCreate: false
 
 ## clusterDomain as defined for your k8s cluster
@@ -43,7 +43,7 @@ initialize: false
 ## Set useReleaseStatus to false if you're deploying this chart using a system that doesn't track .Release.IsInstall or .Release.IsUpgrade (like argocd)
 useReleaseStatus: true
 ## Set cluster name
-# clusterName:
+clusterName: beijing-1
 
 ## add custom labels to components of cluster
 # labels:
@@ -90,7 +90,7 @@ volumes:
   persistence: true
   # configure the components to use local persistent volume
   # the local provisioner should be installed prior to enable local persistent volume
-  local_storage: false
+  local_storage: true
 
 ## RBAC
 ##
@@ -110,7 +110,7 @@ rbac:
 affinity:
   ## When set to true, the scheduler will try to spread pods across different nodes.
   ## It is necessary to set this to false if you're using a Kubernetes cluster with less than 3 nodes, such as local development environments.
-  anti_affinity: true
+  anti_affinity: false
   # Set the anti affinity type. Valid values:
   # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
   # preferredDuringSchedulingIgnoredDuringExecution - scheduler will try to enforce but not guranentee
@@ -143,7 +143,7 @@ components:
   # WARNING! Same trust caveat as `functions` applies — functions run user code.
   function_worker: false
   # proxy
-  proxy: true
+  proxy: false
   # toolset
   toolset: true
   # pulsar manager
@@ -152,11 +152,11 @@ components:
   dekaf: false
 
 # default image repository for pulsar images
-defaultPulsarImageRepository: apachepulsar/pulsar-all
+defaultPulsarImageRepository: nereus-benchmark/pulsar
 
 # default image tag for pulsar images
 # uses chart's appVersion when unspecified
-defaultPulsarImageTag:
+defaultPulsarImageTag: 5.0.0-m1-apache-p8dae0236-amd64
 
 # default pull policy for all images
 defaultPullPolicy: IfNotPresent
@@ -556,8 +556,8 @@ zookeeper:
     follower: 2888
     leaderElection: 3888
     # admin: 9990
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   probe:
     liveness:
@@ -579,7 +579,7 @@ zookeeper:
       periodSeconds: 30
       timeoutSeconds: 30
   affinity:
-    anti_affinity: true
+    anti_affinity: false
     anti_affinity_topology_key: kubernetes.io/hostname
     # Set the anti affinity type. Valid values:
     # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -590,12 +590,19 @@ zookeeper:
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   resources:
     requests:
-      memory: 256Mi
-      cpu: 0.1
+      memory: 2Gi
+      cpu: 2
+    limits:
+      memory: 2304Mi
+      cpu: 2
   # extraVolumes and extraVolumeMounts allows you to mount other volumes
   # Example Use Case: mount ssl certificates
   # extraVolumes:
@@ -619,11 +626,11 @@ zookeeper:
     persistence: true
     data:
       name: data
-      size: 20Gi
+      size: 47Gi
       local_storage: true
       ## If you already have an existent storage class and want to reuse it, you can specify its name with the option below
       ##
-      # storageClassName: existent-storage-class
+      storageClassName: local-zk
       #
       ## Instead if you want to create a new storage class define it below
       ## If left undefined no storage class will be defined along with PVC
@@ -640,11 +647,11 @@ zookeeper:
     ## If you set useSeparateDiskForTxlog to true, this section configures the extra volume for the zookeeper transaction log.
     datalog:
       name: datalog
-      size: 20Gi
+      size: 47Gi
       local_storage: true
       ## If you already have an existent storage class and want to reuse it, you can specify its name with the option below
       ##
-      # storageClassName: existent-storage-class
+      storageClassName: local-zk
       #
       ## Instead if you want to create a new storage class define it below
       ## If left undefined no storage class will be defined along with PVC
@@ -670,7 +677,7 @@ zookeeper:
   ##
   configData:
     PULSAR_MEM: >
-      -Xms64m -Xmx128m
+      -Xms2048m -Xmx2048m
     PULSAR_GC: >
       -XX:+UseZGC
       -XX:+ZGenerational
@@ -729,9 +736,13 @@ oxia:
       annotations: {}
     service_account:
       annotations: {}
-    tolerations: []
-    # nodeSelector:
-      # cloud.google.com/gke-nodepool: default-pool
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+    nodeSelector:
+      workload: pulsar
     # priorityClassName: high-priority-nonpreempting
     extraContainers: []
     extraVolumes: []
@@ -789,7 +800,7 @@ oxia:
       fsGroup: 0
       fsGroupChangePolicy: "OnRootMismatch"
     affinity:
-      anti_affinity: true
+      anti_affinity: false
       anti_affinity_topology_key: kubernetes.io/hostname
       # Set the anti affinity type. Valid values:
       # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -797,9 +808,13 @@ oxia:
       type: requiredDuringSchedulingIgnoredDuringExecution
     # set topologySpreadConstraint to deploy pods across different zones
     topologySpreadConstraints: []
-    tolerations: []
-    # nodeSelector:
-      # cloud.google.com/gke-nodepool: default-pool
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+    nodeSelector:
+      workload: pulsar
     # priorityClassName: high-priority-nonpreempting
   pprofEnabled: false
 ## Pulsar: Bookkeeper cluster
@@ -843,8 +858,8 @@ bookkeeper:
     http: 8000
     bookie: 3181
     statestore: 4181
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   probe:
     liveness:
@@ -866,7 +881,7 @@ bookkeeper:
       periodSeconds: 30
       timeoutSeconds: 5
   affinity:
-    anti_affinity: true
+    anti_affinity: false
     anti_affinity_topology_key: kubernetes.io/hostname
     # Set the anti affinity type. Valid values:
     # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -877,14 +892,21 @@ bookkeeper:
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   ## Timeout for waiting for bookkeeper cluster metadata to be initialized before starting a bookie
   waitMetadataTimeout: 600
   resources:
     requests:
-      memory: 512Mi
-      cpu: 0.2
+      memory: 12Gi
+      cpu: 4
+    limits:
+      memory: 12Gi
+      cpu: 4
   # extraVolumes and extraVolumeMounts allows you to mount other volumes
   # Example Use Case: mount ssl certificates
   # extraVolumes:
@@ -907,11 +929,11 @@ bookkeeper:
     persistence: true
     journal:
       name: journal
-      size: 10Gi
+      size: 100Gi
       local_storage: true
       ## If you already have an existent storage class and want to reuse it, you can specify its name with the option below
       ##
-      # storageClassName: existent-storage-class
+      storageClassName: local-journal-1
       #
       ## Instead if you want to create a new storage class define it below
       ## If left undefined no storage class will be defined along with PVC
@@ -929,17 +951,17 @@ bookkeeper:
       multiVolumes:
         - name: journal0
           size: 10Gi
-          # storageClassName: existent-storage-class
+          storageClassName: local-journal-1
           mountPath: /pulsar/data/bookkeeper/journal0
         - name: journal1
           size: 10Gi
-          # storageClassName: existent-storage-class
+          storageClassName: local-journal-1
           mountPath: /pulsar/data/bookkeeper/journal1
     ledgers:
       name: ledgers
-      size: 50Gi
+      size: 520Gi
       local_storage: true
-      # storageClassName:
+      storageClassName: local-ledger
       # storageClass:
         # ...
       # selector:
@@ -957,11 +979,11 @@ bookkeeper:
     # Optional dedicated volume for BookKeeper indexes / RocksDB (`indexDirectories`).
     # Useful when ledgers are on HDD but you want indexes on NVMe.
     index:
-      enabled: false
+      enabled: true
       name: index
-      size: 10Gi
+      size: 60Gi
       local_storage: true
-      # storageClassName: existent-storage-class
+      storageClassName: local-bookie-index
       # storageClass:
         # ...
       # selector:
@@ -986,7 +1008,7 @@ bookkeeper:
   # Example: place indexes on NVMe by reusing the journal volume mount:
   # indexDirectories:
   #   - /pulsar/data/bookkeeper/journal/index
-  indexDirectories:
+  indexDirectories: /pulsar/data/bookkeeper/index
   ## Bookkeeper service account
   ## templates/bookkeeper-service-account.yaml
   service_account:
@@ -997,9 +1019,9 @@ bookkeeper:
   configData:
     # we use `bin/pulsar` for starting bookie daemons
     PULSAR_MEM: >
-      -Xms128m
-      -Xmx256m
-      -XX:MaxDirectMemorySize=256m
+      -Xms3g
+      -Xmx3g
+      -XX:MaxDirectMemorySize=8g
     PULSAR_GC: >
       -XX:+UseZGC
       -XX:+ZGenerational
@@ -1013,8 +1035,8 @@ bookkeeper:
     #
     # https://bookkeeper.apache.org/docs/reference/config#db-ledger-storage-settings
     # You could use the below example settings for a minimal configuration
-    # dbStorage_writeCacheMaxSizeMb: "32"
-    # dbStorage_readAheadCacheMaxSizeMb: "32"
+    dbStorage_writeCacheMaxSizeMb: "3072"
+    dbStorage_readAheadCacheMaxSizeMb: "1024"
     # dbStorage_rocksDB_writeBufferSizeMB: "8"
     # dbStorage_rocksDB_blockCacheSize: "8388608"
     #
@@ -1038,7 +1060,27 @@ bookkeeper:
     diskUsageLwmThreshold: "0.85"   # default 0.90
     diskUsageWarnThreshold: "0.9"   # default 0.95
     diskUsageThreshold: "0.95"      # default 0.95 (use default)
-    diskCheckInterval: "1800"       # default 10000
+    diskCheckInterval: "10000"       # default 10000
+    #readBufferSizeBytes: "4096"
+    dbStorage_directIOEntryLogger: "true"
+    dbStorage_directIOEntryLoggerTotalWriteBufferSizeMB: "1048"
+    dbStorage_directIOEntryLoggerTotalReadBufferSizeMB: "256"
+    journalWriteData: "true"
+    journalSyncData: "true"
+
+    # group commit
+    journalAdaptiveGroupWrites: "true"
+    journalMaxGroupWaitMSec: "1"  # 默认 1；如果你更看重 p99 延迟，就维持 1
+    journalBufferedWritesThreshold: "2097152" # 默认 524288；适度增大，提升聚合能力
+    journalAlignmentSize: "512" # blockdev --getpbsz /dev/nvme2n1
+    journalWriteBufferSizeKB: "256"
+
+    journalFlushWhenQueueEmpty: "false"
+    numJournalCallbackThreads: "4"
+    journalPreAllocSizeMB: "64"
+    #writeBufferSizeBytes: "1048576"
+    flushEntrylogBytes: "67108864"
+    numAddWorkerThreads: "4"
 
   ## Add a custom command to the start up process of the bookie pods (e.g. update-ca-certificates, jvm commands, etc)
   additionalCommand:
@@ -1076,11 +1118,11 @@ autorecovery:
   restartPodsOnConfigMapChange: false
   ports:
     http: 8000
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   affinity:
-    anti_affinity: true
+    anti_affinity: false
     anti_affinity_topology_key: kubernetes.io/hostname
     # Set the anti affinity type. Valid values:
     # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -1091,14 +1133,21 @@ autorecovery:
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  # tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   ## Timeout for waiting for bookkeeper to become available before starting a broker
   waitBookkeeperTimeout: 120
   resources:
     requests:
-      memory: 128Mi
-      cpu: 0.05
+      memory: 1024Mi
+      cpu: 1
+    limits:
+      memory: 1280Mi
+      cpu: 1
   ## Bookkeeper auto-recovery service
   ## templates/autorecovery-service.yaml
   service:
@@ -1112,7 +1161,7 @@ autorecovery:
   ##
   configData:
     BOOKIE_MEM: >
-      -Xms64m -Xmx128m
+      -Xms1024m -Xmx1024m
     PULSAR_PREFIX_useV2WireProtocol: "true"
   extraVolumes: []
   initContainersExtraVolumeMounts: []
@@ -1203,13 +1252,13 @@ pulsar_metadata:
 #      cpu: 1
 
   ## optional you can specify tolerations and nodeSelectors for all init jobs (pulsar-init & bookkeeper-init)
-  # tolerations: []
-  #   - key: "someKey"
-  #     operator: "Equal"
-  #     value: "someValue"
-  #     effect: "NoSchedule"
-  # nodeSelector: {}
-  #   cloud.google.com/gke-nodepool: default-pool
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+  nodeSelector:
+    workload: pulsar
 
   ## optional, you can provide your own zookeeper metadata store for other components
   # to use this, you should explicit set components.zookeeper to false
@@ -1350,8 +1399,8 @@ broker:
     https: 8443
     pulsar: 6650
     pulsarssl: 6651
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   probe:
     liveness:
@@ -1373,7 +1422,7 @@ broker:
       periodSeconds: 10
       timeoutSeconds: 5
   affinity:
-    anti_affinity: true
+    anti_affinity: false
     anti_affinity_topology_key: kubernetes.io/hostname
     # Set the anti affinity type. Valid values:
     # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -1384,7 +1433,11 @@ broker:
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   ## Timeout for waiting for zookeeper to become available before starting a broker
   waitZookeeperTimeout: 600
@@ -1394,8 +1447,11 @@ broker:
   waitBookkeeperTimeout: 120
   resources:
     requests:
-      memory: 512Mi
-      cpu: 0.2
+      memory: 8Gi
+      cpu: 4
+    limits:
+      memory: 8448Mi
+      cpu: 4
   # extraVolumes and extraVolumeMounts allows you to mount other volumes
   # Example Use Case: mount ssl certificates
   # extraVolumes:
@@ -1422,7 +1478,7 @@ broker:
   ##
   configData:
     PULSAR_MEM: >
-      -Xms128m -Xmx256m -XX:MaxDirectMemorySize=256m
+      -Xms3g -Xmx3g -XX:MaxDirectMemorySize=3g
     PULSAR_GC: >
       -XX:+UseZGC
       -XX:+ZGenerational
@@ -1431,9 +1487,25 @@ broker:
       -XX:+ExitOnOutOfMemoryError
       -XX:+DisableExplicitGC
       -XX:+PerfDisableSharedMem
-    managedLedgerDefaultEnsembleSize: "2"
+    managedLedgerDefaultEnsembleSize: "3"
     managedLedgerDefaultWriteQuorum: "2"
     managedLedgerDefaultAckQuorum: "2"
+    transactionCoordinatorEnabled: "false"
+    delayedDeliveryEnabled: "true"
+    delayedDeliveryTrackerFactoryClassName: "org.apache.pulsar.broker.delayed.BucketDelayedDeliveryTrackerFactory"
+    acknowledgmentAtBatchIndexLevelEnabled: "true"
+    preciseDispatcherFlowControl: "false"
+    preciseTopicPublishRateLimiterEnable: "true"
+    bookkeeperClientSpeculativeReadTimeoutInMillis: "2000"
+    # Load Manager. Here uses the extensible load balancer, sets the unloading strategy to TransferShedder, and enables debug mode.
+    loadManagerClassName: "org.apache.pulsar.broker.loadbalance.extensions.ExtensibleLoadManagerImpl"
+    loadBalancerLoadSheddingStrategy: "org.apache.pulsar.broker.loadbalance.extensions.scheduler.TransferShedder"
+    loadBalancerDebugModeEnabled: "false"
+    loadBalancerBrokerLoadTargetStd: "0.1"
+    managedLedgerCursorMaxEntriesPerLedger: "200000"
+    managedLedgerMaxEntriesPerLedger: "1000000"
+    managedCursorInfoCompressionType: "LZ4"
+    managedLedgerInfoCompressionType: "LZ4"
 
   ## Add a custom command to the start up process of the broker pods (e.g. update-ca-certificates, jvm commands, etc)
   additionalCommand:
@@ -1446,7 +1518,7 @@ broker:
     # 2. '' -> non-headless service, k8s picks an IPv4 address
     # 3. 'None' -> headless
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-clusterip
-    clusterIP: ""
+    clusterIP: "None"
     annotations: {}
   ## Broker headless service with publishNotReadyAddresses set to true and used for statefulset's pod hostname resolution
   ## This service is used for broker pod DNS names in the broker statefulset.
@@ -1752,7 +1824,7 @@ proxy:
   # use a component name that matches your grafana configuration
   # so the metrics are correctly rendered in grafana dashboard
   component: proxy
-  replicaCount: 3
+  replicaCount: 1
   autoscaling:
     enabled: false
     minReplicas: 1
@@ -1782,8 +1854,8 @@ proxy:
       #   regex: cluster
   # True includes annotation for statefulset that contains hash of corresponding configmap, which will cause pods to restart on configmap change
   restartPodsOnConfigMapChange: false
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   probe:
     liveness:
@@ -1805,7 +1877,7 @@ proxy:
       periodSeconds: 10
       timeoutSeconds: 5
   affinity:
-    anti_affinity: true
+    anti_affinity: false
     anti_affinity_topology_key: kubernetes.io/hostname
     # Set the anti affinity type. Valid values:
     # requiredDuringSchedulingIgnoredDuringExecution - rules must be met for pod to be scheduled (hard) requires at least one node per replica
@@ -1816,7 +1888,11 @@ proxy:
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   ## Timeout for waiting for zookeeper to become available before starting a proxy
   waitZookeeperTimeout: 600
@@ -1826,8 +1902,11 @@ proxy:
   waitBrokerTimeout: 120
   resources:
     requests:
-      memory: 128Mi
-      cpu: 0.2
+      memory: 512Mi
+      cpu: 1
+    limits:
+      memory: 768Mi
+      cpu: 1
   # extraVolumes and extraVolumeMounts allows you to mount other volumes
   # Example Use Case: mount ssl certificates
   # extraVolumes:
@@ -1856,7 +1935,7 @@ proxy:
   ##
   configData:
     PULSAR_MEM: >
-      -Xms64m -Xmx128m -XX:MaxDirectMemorySize=128m
+      -Xms256m -Xmx256m -XX:MaxDirectMemorySize=256m
     PULSAR_GC: >
       -XX:+UseZGC
       -XX:+ZGenerational
@@ -1935,10 +2014,10 @@ proxy:
     # Optional. When setting proxy.service.type is set to NodePort, nodePorts allows to choose the port that will be open on each node to proxy requests to each destination proxy service.
     # Ref: https://kubernetes.io/docs/concepts/services-networking/service/#type-nodeport
     nodePorts:
-      http: ""
-      https: ""
-      pulsar: ""
-      pulsarssl: ""
+      http: "31380"
+      https: "31390"
+      pulsar: "31650"
+      pulsarssl: "31651"
   ## Proxy ingress
   ## templates/proxy-ingress.yaml
   ##
@@ -1967,20 +2046,24 @@ proxy:
 ##
 toolset:
   component: toolset
-  useProxy: true
+  useProxy: false
   replicaCount: 1
   initContainers: []
   # True includes annotation for statefulset that contains hash of corresponding configmap, which will cause pods to restart on configmap change
   restartPodsOnConfigMapChange: false
-  # nodeSelector:
-    # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   # set topologySpreadConstraint to deploy pods across different zones
   topologySpreadConstraints: []
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   gracePeriod: 30
   resources:
     requests:
@@ -2008,7 +2091,7 @@ toolset:
   ##
   configData:
     PULSAR_MEM: >
-      -Xms64M
+      -Xms128M
       -Xmx128M
       -XX:MaxDirectMemorySize=128M
   ## Add a custom command to the start up process of the toolset pods (e.g. update-ca-certificates, jvm commands, etc)
@@ -2043,12 +2126,20 @@ victoria-metrics-k8s-stack:
     ## -- Full spec for VMSingle CRD. Allowed values describe [here](https://docs.victoriametrics.com/operator/api#vmsinglespec)
     spec:
       retentionPeriod: "10d"
+      nodeSelector:
+        workload: pulsar
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: pulsar
+          effect: NoSchedule
       storage:
         accessModes:
           - ReadWriteOnce
         resources:
           requests:
-            storage: 50Gi
+            storage: 47Gi
+        storageClassName: local-prometheus-1
 
   ## VM Agent for scraping metrics
   vmagent:
@@ -2080,9 +2171,17 @@ victoria-metrics-k8s-stack:
     # You can find out the actual password by running the following command:
     # kubectl get secret -l app.kubernetes.io/name=grafana -o=jsonpath="{.items[0].data.admin-password}" | base64 --decode
     adminPassword:
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
     persistence:
       enabled: true
-      size: 5Gi
+      storageClassName: local-grafana
+      size: 19Gi
     ## Disable Grafana sidecar dashboards
     ## since this cannot be enabled in the same time as dashboards are enabled
     sidecar:
@@ -2100,9 +2199,9 @@ victoria-metrics-k8s-stack:
       dashboardproviders.yaml:
         apiVersion: 1
         providers:
-        - name: 'default'
+        - name: 'beijing-1'
           orgId: 1
-          folder: ''
+          folder: 'Pulsar'
           type: file
           disableDeletion: true
           editable: true
@@ -2259,21 +2358,28 @@ pulsar_manager:
   initContainers: []
   # True includes annotation for statefulset that contains hash of corresponding configmap, which will cause pods to restart on configmap change
   restartPodsOnConfigMapChange: false
-  # nodeSelector:
-  # cloud.google.com/gke-nodepool: default-pool
+  nodeSelector:
+    workload: pulsar
   # priorityClassName: high-priority-nonpreempting
   # set topologySpreadConstraint to deploy pods across different zones
   topologySpreadConstraints: []
   # annotations for the app (statefulset/deployment)
   appAnnotations: {}
   annotations: {}
-  tolerations: []
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   extraVolumes: []
   extraVolumeMounts: []
   gracePeriod: 30
   resources:
     requests:
       memory: 250Mi
+      cpu: 0.1
+    limits:
+      memory: 506Mi
       cpu: 0.1
   configData:
     REDIRECT_HOST: "http://127.0.0.1"
@@ -2289,11 +2395,11 @@ pulsar_manager:
     persistence: true
     data:
       name: data
-      size: 128Mi
+      size: 10Gi
       local_storage: true
       ## If you already have an existent storage class and want to reuse it, you can specify its name with the option below
       ##
-      # storageClassName: existent-storage-class,
+      storageClassName: local-path
       ## If you want to bind static persistent volumes via selectors, e.g.:
       # selector:
         # matchLabels:
