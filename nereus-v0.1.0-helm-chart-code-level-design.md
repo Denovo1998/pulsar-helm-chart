@@ -71,7 +71,10 @@ under the License.
 12. Pulsar fork和 Nereus v0.1.0 都以最终 commit SHA重新构建 distribution image。
 13. BookKeeper ledger-id namespace reservation 由独立 Job 在 Broker runtime 完成初始化前创建。
 14. publication/generation activation 由显式脚本执行，不放入 Helm hook。
-15. A–E 每轮使用全新的测试 namespace/topic，禁止在线切换已创建 topic 的 Nereus profile。
+15. A–E 每轮都执行完整冷启动：上一轮 Helm release、Oxia metadata、
+    BookKeeper journal/ledger/index、SeaweedFS object 和全部数据 PVC 必须清理；
+    同时使用全新的测试 namespace/topic，禁止在线切换已创建 topic 的 Nereus
+    profile。
 16. 任何正式结果必须记录源码 SHA、容器 imageID/digest、渲染后 manifest hash 和运行证据。
 17. Nereus/Oxia 不限制 Pulsar load manager 实现；`ModularLoadManagerImpl`
     和 `ExtensibleLoadManagerImpl` 都通过 Pulsar `MetadataStore` 抽象访问
@@ -1258,6 +1261,7 @@ pulsar-helm-chart/
 ├── examples/nereus-benchmark/
 │   ├── README.md
 │   ├── values-common.yaml
+│   ├── values-campaign.example.yaml
 │   ├── values-stage-a-apache.yaml
 │   ├── values-stage-b-dormant.yaml
 │   ├── values-stage-c-bk-only.yaml
@@ -1269,7 +1273,9 @@ pulsar-helm-chart/
 │       └── local-seaweedfs-pv.example.yaml
 │
 └── scripts/
+    ├── prepare-nereus-campaign-values.sh
     ├── deploy-nereus-stage.sh
+    ├── reset-nereus-benchmark-stage.sh
     ├── activate-nereus-publications.sh
     ├── verify-nereus-release.sh
     ├── run-object-store-contract.sh
@@ -1286,7 +1292,7 @@ apiVersion: v2
 name: pulsar
 description: Apache Pulsar Helm chart with optional Nereus benchmark integration
 type: application
-version: 4.7.0-nereus.1
+version: 4.7.0-nereus.2
 appVersion: "5.0.0-M1"
 ```
 
@@ -1301,6 +1307,16 @@ Chart version可以变更，它不是 Nereus 产品版本。
 ```yaml
 oxia:
    extraNamespaces: []
+
+   coordinator:
+      # 非空时替代旧 cpuLimit/memoryLimit-only block。
+      resources: {}
+
+   server:
+      # 非空时替代旧 cpuLimit/memoryLimit-only block。
+      resources: {}
+      # storageClassName为空时才允许走chart-wide local-storage fallback。
+      local_storage: false
 
 nereus:
    enabled: false
@@ -2284,7 +2300,7 @@ capability verification
 ## 22.2 流程
 
 ```text
-helm upgrade --install
+helm install
   -> SeaweedFS Ready
   -> BK bootstrap Job succeeded
   -> Broker init verifies dependencies
@@ -2351,7 +2367,9 @@ bk-activation-final.json
 ## 23.1 Common
 
 ```yaml
-namespace: pulsar
+# 空值使 Helm release namespace 成为默认权威值；部署脚本还会用同一个
+# NEREUS_NAMESPACE 显式覆盖，避免 --namespace 与 .Values.namespace 分裂。
+namespace: ""
 clusterName: beijing-1
 initialize: true
 
@@ -2369,6 +2387,11 @@ defaultPulsarImageTag: 5.0.0-m1-apache-p8dae0236-amd64
 defaultPullPolicy: Never
 
 images:
+   oxia:
+      repository: oxia/oxia
+      tag: 0.16.7
+      pullPolicy: Never
+
    bookie:
       repository: nereus-benchmark/pulsar
       tag: 5.0.0-m1-apache-p8dae0236-amd64
@@ -2394,6 +2417,15 @@ oxia:
         replicationFactor: 3
 
    coordinator:
+      # 与本轮原 ZooKeeper resource envelope 完全一致。
+      resources:
+         requests:
+            memory: 2Gi
+            cpu: 2
+         limits:
+            memory: 2304Mi
+            cpu: 2
+
       podMonitor:
          enabled: true
          interval: 5s
@@ -2401,6 +2433,19 @@ oxia:
 
    server:
       replicas: 3
+
+      resources:
+         requests:
+            memory: 2Gi
+            cpu: 2
+         limits:
+            memory: 2304Mi
+            cpu: 2
+
+      storageSize: 47Gi
+      local_storage: true
+      storageClassName: local-zk
+
       podMonitor:
          enabled: true
          interval: 5s
@@ -2490,6 +2535,29 @@ nereus:
 
       operatorEvidenceSha256: <64_HEX_OPERATOR_EVIDENCE>
 ```
+
+tracked values 固定源码和拓扑，campaign identity 单独放在不提交的第三层：
+
+```yaml
+# values-campaign.yaml
+nereus:
+   bookkeeperWal:
+      providerScopeSha256: <64_HEX_PROVIDER_SCOPE>
+      ledgerIdNamespaceReservationId: <FIXED_RESERVATION_ID>
+
+   admin:
+      operatorEvidenceSha256: <64_HEX_OPERATOR_EVIDENCE>
+```
+
+`prepare-nereus-campaign-values.sh` 从 checksummed image manifest 校验三个 frozen
+image/source identity，按实际 release/namespace 渲染 Oxia BookKeeper metadata
+service URI，扩展为集群内 FQDN 后计算 provider scope SHA-256，生成一个 reservation
+UUID，并把 context、release、namespace、cluster、scope、reservation、manifest
+SHA-256 和三个完整 image ID 固化到相邻的 non-secret operator-evidence 文件。
+`deploy-nereus-stage.sh` 对 A–E 都要求该 values 层和 evidence 文件同时存在；
+A 用它校验 Apache image ID，B–E 还校验 rendered `operatorEvidenceSha256`
+等于 evidence 文件 SHA-256。一个 campaign 的 B–E 必须复用同一组 identity；
+不同物理 BookKeeper scope 必须重新生成。
 
 每个 A–E overlay必须给 Broker Pod写入以下纯证据 annotation：
 
@@ -2617,12 +2685,33 @@ kubectl -n pulsar create secret generic pulsar-nereus-secrets \
 ```bash
 helm lint charts/pulsar \
   -f examples/nereus-benchmark/values-common.yaml \
-  -f examples/nereus-benchmark/values-stage-<stage>.yaml
+  -f examples/nereus-benchmark/values-stage-<stage>.yaml \
+  --set-string nereus.bookkeeperWal.providerScopeSha256=<64_HEX> \
+  --set-string nereus.bookkeeperWal.ledgerIdNamespaceReservationId=<UUID> \
+  --set-string nereus.admin.operatorEvidenceSha256=<64_HEX>
 
 helm template pulsar charts/pulsar \
+  --namespace pulsar-benchmark \
   -f examples/nereus-benchmark/values-common.yaml \
   -f examples/nereus-benchmark/values-stage-<stage>.yaml \
+  --set-string nereus.bookkeeperWal.providerScopeSha256=<64_HEX> \
+  --set-string nereus.bookkeeperWal.ledgerIdNamespaceReservationId=<UUID> \
+  --set-string nereus.admin.operatorEvidenceSha256=<64_HEX> \
   > /tmp/stage-<stage>.yaml
+```
+
+正向矩阵还必须断言 `--namespace pulsar-benchmark` 传播到 namespaced resources，
+并拒绝 common values 把它重新固定为 `pulsar`；同时断言 Apache、Nereus Broker
+和 Nereus admin 都使用 frozen source-qualified tag。每个 stage 还必须断言：
+
+```text
+不渲染 ZooKeeper resource
+broker metadataStoreUrl = oxia://<release>-oxia-svc:6648/broker
+BookKeeper metadataServiceUri =
+  metadata-store:oxia://<release>-oxia-svc:6648/bookkeeper
+Oxia server PVC = 47Gi, storageClassName = local-zk
+Oxia server/coordinator requests = 2 CPU / 2Gi
+Oxia server/coordinator limits = 2 CPU / 2304Mi
 ```
 
 ## 25.2 A 断言
@@ -2704,14 +2793,24 @@ ModularLoadManagerImpl”的 Helm 校验。
 ```text
 1. 校验 stage参数并映射精确 overlay和namespace storage class。
 2. 要求显式设置NEREUS_EXPECTED_CONTEXT，并与current-context逐字匹配。
-3. helm lint + template，并保存 common/overlay/manifest SHA-256。
-4. 在任何 Kubernetes mutation前拒绝zero SHA、zero UUID和image tag占位符。
-5. 校验目标namespace已存在；Secret存在，且必需key均有非空value。A 需要
+3. A–E都要求NEREUS_CAMPAIGN_VALUES和相邻/显式operator evidence；A用它校验
+   Apache image ID，B–E还绑定BookKeeper campaign identity。
+4. helm lint + template，并保存 common/overlay/campaign/evidence/manifest SHA-256。
+5. 在任何 Kubernetes mutation前拒绝zero SHA、zero UUID和image tag占位符；
+   rendered operatorEvidenceSha256必须等于operator evidence文件SHA-256；
+   metadata path必须为Oxia且不得渲染ZooKeeper；Oxia PVC必须为local-zk/47Gi。
+6. 校验目标namespace已存在，且不存在同名 Helm release 或任何同名前缀的
+   Oxia/BookKeeper/SeaweedFS 数据 PVC；`local-zk` StorageClass存在；若它是
+   `kubernetes.io/no-provisioner`，必须有至少3个 `Available` PV；
+   Secret存在且必需key均有非空value。A 需要
    SeaweedFS access/secret key；B–E 额外需要 BookKeeper password。
-6. helm upgrade --install；clusterName和existingSecret使用同一组显式override
-   贯穿lint/template/upgrade。
-7. 按依赖顺序显式等待：
+7. helm install；namespace、fullnameOverride、clusterName和
+   existingSecret使用同一组显式override贯穿lint/template/upgrade；
+   fullnameOverride固定为release名，使脚本等待的资源名不依赖Chart fullname
+   拼接规则。
+8. 按依赖顺序显式等待：
    Oxia coordinator/server
+   三个Oxia PVC均为local-zk/47Gi/Bound
    BookKeeper init/StatefulSet
    Pulsar cluster initialize
    AutoRecovery
@@ -2719,11 +2818,36 @@ ModularLoadManagerImpl”的 Helm 校验。
    Nereus namespace bootstrap（仅 B–E）
    Broker
    Toolset
-8. 创建全新的 tenant/namespace。
-9. 通过 pulsar-admin set-persistence写入3/3/2和stage storage class。
-10. A/B创建stock smoke topic；C–E在activation完成后创建Nereus smoke topic。
-11. 保存run.env、镜像ID、namespace policy和Pod证据。
+9. 创建全新的 tenant/namespace。
+10. 通过 pulsar-admin set-persistence写入3/3/2和stage storage class。
+11. A/B创建stock smoke topic；C–E在activation完成后创建Nereus smoke topic。
+12. 保存run.env、campaign/evidence SHA、镜像ID、namespace policy和Pod证据；
+    Apache/Nereus/admin必须匹配build manifest完整image ID，四个Oxia container
+    必须收敛到同一个SHA-256 image identity。
 ```
+
+两节点环境默认只保留一个隔离的 benchmark Helm release。每个 A–E stage
+都按 `helm install -> gate -> 测量 -> gate -> evidence -> cold reset`
+执行，不允许原地 upgrade。profile 变化不迁移既有 topic，而是在前一 stage
+全部物理数据清空、PV 恢复 `Available` 后重新安装。
+
+`reset-nereus-benchmark-stage.sh` 必须：
+
+1. 从本轮 `run.env` 绑定 stage、context、release 和 namespace；
+2. 要求 `collect-helm-evidence.sh` 已生成且校验通过的 archive/sidecar；
+3. 只接受显式的 `<namespace>/<release>/<stage>` 删除确认；
+4. 从运行中 release Pod 解析本轮恰好 16 个数据 PVC：
+   Oxia 3、BookKeeper journal/ledger/index 12、SeaweedFS 1；
+5. `helm uninstall --wait` 后，为每个 PVC 创建短生命周期 cleaner Pod，
+   使用已导入的 frozen Apache image 挂载并清空文件系统；
+6. 任一 wipe 失败时停止且不得删除该 PVC；
+7. wipe 全部成功后删除 PVC；`Retain` PV 移除旧 claimRef 并等待
+   `Available`，`Delete` PV 等待资源消失；
+8. 保存 PVC/PV mapping、逐 PVC wipe log、完成记录及 SHA-256。
+
+namespace、手工创建的 Secret、campaign values 和本地 results/evidence 不由
+reset 脚本删除。下一 stage 复用同一 campaign identity，但物理存储内容必须
+为空；若使用新的 physical provider scope，则必须生成新的 campaign identity。
 
 脚本不使用一个全局 `--wait` 隐藏失败来源，而是分别等待：
 

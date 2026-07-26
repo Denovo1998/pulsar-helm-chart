@@ -48,12 +48,17 @@ variable fixed; the Chart does not reject either implementation.
 - Nereus Pulsar: `50fc70fe4620febcf0fd31d97ff7d2be447af3d4`;
 - Nereus v0.1.0: `78a1544596af3c74ec1f3ce8b6194f015f6a2c9a`.
 
-The planned Nereus broker and admin tags are
-`5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64` and
-`v0.1.0-n78a15445-amd64`. They are source-qualified names, not proof that the
-images have already been built. Keep the zero-valued tags in the example
-values until the build manifest records the actual image IDs/digests, then
-replace all placeholders from that manifest.
+The benchmark values are frozen to these three source-qualified local
+containerd tags:
+
+- `nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64`;
+- `nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64`;
+- `nereus-benchmark/nereus-admin:v0.1.0-n78a15445-amd64`.
+
+The tag is only a readable identity. The checksummed build manifest and the
+full image IDs recorded there remain the immutable source of truth. Import the
+same archive on every schedulable node and retain the manifest beside the
+deployment evidence.
 
 ## 1. Build immutable images
 
@@ -103,26 +108,98 @@ CONTAINERD_USE_SUDO=true \
 Run the `load` command on both Kubernetes nodes when using
 `imagePullPolicy: Never`.
 
+Oxia is also an explicit benchmark dependency. It is not included in the
+three-image Pulsar archive. The common values freeze
+`oxia/oxia:0.16.7` with `imagePullPolicy: Never`, so import that image on every
+node that can run `workload=pulsar` (or pre-pull it directly into the `k8s.io`
+containerd namespace):
+
+```bash
+nerdctl --namespace k8s.io pull oxia/oxia:0.16.7
+nerdctl --namespace k8s.io images --digests --no-trunc oxia/oxia:0.16.7
+```
+
+Record the same full Oxia image ID/digest on each eligible node. Deployment
+evidence captures all four running Oxia containers and fails if they do not
+resolve to one identical SHA-256 image identity.
+
 SeaweedFS is a separate third-party image. Resolve `chrislusf/seaweedfs:4.29`
 to a digest once, record that digest, tag it as
 `nereus-benchmark/seaweedfs:4.29-amd64`, and either push it to the same registry
 or import it on the node labeled `nereus-object-store=true`.
 
-## 2. Replace campaign placeholders
+## 2. Create one campaign identity
 
-Before deployment, replace these values with the build manifest and
-campaign-specific identities:
+Do not edit the tracked common or stage values for each server run. Generate a
+small untracked values layer from the checksummed image manifest instead.
+First choose an isolated release, Kubernetes namespace, and Pulsar cluster
+name. This example intentionally does not touch an existing
+`beijing-1` release in the `pulsar` namespace:
 
-- B–E broker image tag (`p50fc70fe-n78a15445`);
-- Nereus admin image tag;
-- `nereus.bookkeeperWal.providerScopeSha256`;
-- `nereus.bookkeeperWal.ledgerIdNamespaceReservationId`;
-- `nereus.admin.operatorEvidenceSha256`.
+```bash
+kubectl config current-context
 
-The deployment script renders first and refuses zero/SHA placeholders before
-mutating the Helm release.
+export NEREUS_EXPECTED_CONTEXT='<EXACT_EXPECTED_CONTEXT>'
+export NEREUS_RELEASE='nereus-benchmark'
+export NEREUS_NAMESPACE='pulsar-benchmark'
+export NEREUS_CLUSTER='beijing-1-benchmark'
+
+mkdir -p /root/denovo/nereus-campaign
+./scripts/prepare-nereus-campaign-values.sh \
+  /root/denovo/nereus-campaign/values-campaign.yaml \
+  /root/denovo/nereus/nereus/build/performance-images/pulsar-5.0.0-M1-amd64.env
+
+export NEREUS_CAMPAIGN_VALUES=\
+/root/denovo/nereus-campaign/values-campaign.yaml
+```
+
+The helper verifies the manifest sidecar, exact source SHAs, image names, and
+full image IDs. It derives a canonical BookKeeper/Oxia provider scope, creates
+one reservation UUID, and writes a non-secret operator-evidence file next to
+the values file. Stage A uses this evidence to check the running Apache image
+ID. B–E also verify that the provider scope, reservation, and evidence SHA-256
+rendered into the admin configuration match the same file, then check all
+running Apache, Nereus broker, and Nereus admin image IDs.
+
+`values-campaign.yaml` and
+`values-campaign.operator-evidence.txt` are intentionally ignored by Git.
+They are generated deployment inputs bound to one exact Kubernetes context,
+release, namespace, cluster, image manifest, provider scope, and reservation;
+they are not reusable source defaults. The evidence file contains no secret,
+but committing either file would make it easy to reuse a physical-provider
+identity accidentally. `values-campaign.example.yaml` is the tracked schema
+and documentation; regenerate the ignored pair with the helper for the real
+campaign.
+
+Use the same generated identity for B–E in this campaign. Do not regenerate it
+between profiles, and never reuse its reservation UUID for another physical
+BookKeeper provider scope. For an external/shared BookKeeper service, set
+`NEREUS_BOOKKEEPER_PROVIDER_SCOPE_ID` to its canonical non-secret
+metadata-service/ledger-root identity before running the helper.
 
 ## 3. Prepare the two nodes
+
+The benchmark does not deploy ZooKeeper. Pulsar and BookKeeper metadata both
+use Oxia. Each of the three Oxia server Pods requests a 47 Gi PVC from the
+existing `local-zk` StorageClass. Oxia server and coordinator requests/limits
+are intentionally synchronized with the former ZooKeeper benchmark envelope:
+2 CPU and 2 Gi requested, 2 CPU and 2304 Mi limited.
+
+Check the existing local storage before installing:
+
+```bash
+kubectl get storageclass local-zk -o wide
+kubectl get pv \
+  -o custom-columns='NAME:.metadata.name,CLASS:.spec.storageClassName,PHASE:.status.phase,CAPACITY:.spec.capacity.storage,NODE:.spec.nodeAffinity.required.nodeSelectorTerms[*].matchExpressions[*].values[*]'
+```
+
+For the first install with a `kubernetes.io/no-provisioner` StorageClass, at
+least three suitable `Available` PVs must remain for Oxia. PVs already bound to
+the old ZooKeeper cluster cannot be reused while that cluster remains
+installed; add three new local PVs with class `local-zk` instead of deleting
+the old cluster. Every A–E measurement is a cold install: the deploy preflight
+rejects an existing release or residual benchmark data PVC and requires all
+three Oxia PVs to be `Available`.
 
 Create the local SeaweedFS storage class/PV after editing the example PV path:
 
@@ -141,11 +218,13 @@ kubectl label node <APP_NODE> workload=app --overwrite
 kubectl label node <APP_NODE> nereus-object-store=true --overwrite
 ```
 
-Create the namespace and runtime secret. Do not commit the populated Secret:
+Create the isolated namespace and runtime secret. Do not commit the populated
+Secret:
 
 ```bash
-kubectl create namespace pulsar --dry-run=client -o yaml | kubectl apply -f -
-kubectl -n pulsar create secret generic pulsar-nereus-secrets \
+kubectl create namespace "${NEREUS_NAMESPACE}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n "${NEREUS_NAMESPACE}" create secret generic pulsar-nereus-secrets \
   --from-literal=access-key='<SEAWEEDFS_ACCESS_KEY>' \
   --from-literal=secret-key='<SEAWEEDFS_SECRET_KEY>' \
   --from-literal=bookkeeper-password='<NEREUS_BK_PASSWORD>'
@@ -160,14 +239,15 @@ fail-closed matrix:
 ./scripts/test-nereus-render.sh
 ```
 
-## 5. Deploy and gate each stage
+## 5. Deploy, measure, and cold-reset each stage
 
-Inspect the active context and name the expected target explicitly. Deployment
-fails before any Kubernetes mutation when the values differ:
+Keep the exports from section 2 in the same shell. Deployment fails before any
+Kubernetes mutation if the context differs, the campaign identity/evidence is
+missing, an image/identity placeholder remains, the Helm release still exists,
+or a data PVC from the previous stage remains.
 
 ```bash
 kubectl config current-context
-export NEREUS_EXPECTED_CONTEXT='<EXACT_EXPECTED_CONTEXT>'
 ```
 
 Stage A:
@@ -175,20 +255,40 @@ Stage A:
 ```bash
 ./scripts/deploy-nereus-stage.sh A
 ./scripts/verify-nereus-release.sh A
+
+# Run the manual A performance workload here, then stop every load client.
+
+./scripts/verify-nereus-release.sh A
 ./scripts/collect-helm-evidence.sh
+
+# First command is read-only and prints the exact PVC/PV reset plan.
+./scripts/reset-nereus-benchmark-stage.sh A
+
+# The plan prints this exact confirmation value.
+NEREUS_COLD_RESET_CONFIRM='pulsar-benchmark/nereus-benchmark/A' \
+  ./scripts/reset-nereus-benchmark-stage.sh A --execute
 ```
 
-Stages B–E:
+Stage B:
 
 ```bash
 ./scripts/deploy-nereus-stage.sh B
 ./scripts/activate-nereus-publications.sh B
 ./scripts/run-object-store-contract.sh
 ./scripts/verify-nereus-release.sh B
+
+# Run the manual B performance workload here, then stop every load client.
+
+./scripts/verify-nereus-release.sh B
 ./scripts/collect-helm-evidence.sh
+./scripts/reset-nereus-benchmark-stage.sh B
+NEREUS_COLD_RESET_CONFIRM='pulsar-benchmark/nereus-benchmark/B' \
+  ./scripts/reset-nereus-benchmark-stage.sh B --execute
 ```
 
-Repeat with `C`, `D`, and `E`. Activation reads broker-generated readiness,
+Repeat the Stage B block with `C`, `D`, and `E`, including activation,
+contract, verification, evidence collection, and the matching reset
+confirmation suffix. Activation reads broker-generated readiness,
 activates all BookKeeper publication capabilities against the initial
 generation-capable broker set, runs generation registration backfill, and
 restarts brokers. Once the restarted brokers advertise their durable
@@ -204,3 +304,46 @@ Every script writes non-secret evidence below the deployment run directory.
 The deployment run records the Kubernetes context; every later gate rejects a
 different current context, release, or namespace. `collect-helm-evidence.sh`
 packages the evidence and emits an archive SHA-256.
+
+The reset script refuses to run until the evidence archive and its checksum
+exist. It uninstalls Helm, mounts every release-owned data PVC through a
+short-lived root cleaner Pod using the already imported Apache image, verifies
+that each filesystem is empty, deletes all 16 PVCs (Oxia 3, BookKeeper 12,
+SeaweedFS 1), and returns `Retain` PVs to `Available`. A failed wipe leaves the
+PVC in place and stops; rerunning the same command resumes from the recorded
+PVC/PV map. It does not delete the namespace, runtime Secret, campaign values,
+or results archive.
+
+After every reset, verify the storage pool before installing the next stage:
+
+```bash
+helm -n "${NEREUS_NAMESPACE}" list --all
+kubectl -n "${NEREUS_NAMESPACE}" get pvc
+kubectl get pv \
+  -o custom-columns='NAME:.metadata.name,CLASS:.spec.storageClassName,PHASE:.status.phase,CAPACITY:.spec.capacity.storage'
+```
+
+There must be no `nereus-benchmark` Helm release and no benchmark data PVC.
+All static PVs needed by Oxia, BookKeeper, and SeaweedFS must be `Available`.
+The next `deploy-nereus-stage.sh` invocation performs a new `helm install`,
+therefore Oxia metadata, BookKeeper ledgers/journals/indexes, SeaweedFS
+objects, and Pulsar metadata all start empty.
+
+If local PV manifests are deliberately deleted and recreated between stages,
+do that only after the reset script has wiped and deleted the PVCs. Deleting a
+`Retain` PV object does not erase its local path. Do not mix a bare
+`helm uninstall` plus `kubectl delete -f <pv.yaml>` with the reset script:
+either let the reset return the existing PVs to `Available`, or additionally
+delete/re-apply the PV manifests after the reset has completed. In the latter
+case, verify every backing directory is empty before re-applying
+`bookie_index_pv.yaml`, `ledger_pv.yaml`, `zk_pv.yaml`, `journal_pv.yaml`, and
+the SeaweedFS PV manifest. Reset the monitoring PV too only when monitoring is
+part of the measured Helm release and its historical samples must not cross
+stage boundaries.
+
+After Stage E has been reset and its archive copied off the server, the
+isolated namespace can also be removed:
+
+```bash
+kubectl delete namespace "${NEREUS_NAMESPACE}"
+```

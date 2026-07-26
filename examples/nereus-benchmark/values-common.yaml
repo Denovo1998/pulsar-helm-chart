@@ -18,7 +18,9 @@
 # Nereus v0.1.0 Benchmark - Common Values
 # Applied first for all A-E stages.
 
-namespace: pulsar
+# Leave empty so .Release.Namespace (and deploy-nereus-stage.sh's explicit
+# namespace override) is authoritative.
+namespace: ""
 clusterName: beijing-1
 initialize: true
 
@@ -36,6 +38,10 @@ defaultPulsarImageTag: 5.0.0-m1-apache-p8dae0236-amd64
 defaultPullPolicy: Never
 
 images:
+  oxia:
+    repository: oxia/oxia
+    tag: 0.16.7
+    pullPolicy: Never
   bookie:
     repository: nereus-benchmark/pulsar
     tag: 5.0.0-m1-apache-p8dae0236-amd64
@@ -57,12 +63,29 @@ oxia:
       initialShardCount: 3
       replicationFactor: 3
   coordinator:
+    resources:
+      requests:
+        memory: 2Gi
+        cpu: 2
+      limits:
+        memory: 2304Mi
+        cpu: 2
     podMonitor:
       enabled: true
       interval: 5s
       scrapeTimeout: 4s
   server:
     replicas: 3
+    resources:
+      requests:
+        memory: 2Gi
+        cpu: 2
+      limits:
+        memory: 2304Mi
+        cpu: 2
+    storageSize: 47Gi
+    local_storage: true
+    storageClassName: local-zk
     podMonitor:
       enabled: true
       interval: 5s
@@ -129,6 +152,6 @@ nereus:
   admin:
     image:
       repository: nereus-benchmark/nereus-admin
-      tag: v0.1.0-n00000000-amd64
+      tag: v0.1.0-n78a15445-amd64
       pullPolicy: Never
     operatorEvidenceSha256: "0000000000000000000000000000000000000000000000000000000000000000"

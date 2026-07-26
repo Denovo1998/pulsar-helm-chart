@@ -30,6 +30,11 @@ chart="${repo_root}/charts/pulsar"
 common="${repo_root}/examples/nereus-benchmark/values-common.yaml"
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/nereus-render.XXXXXX")"
 trap 'rm -rf "${temporary_dir}"' EXIT
+positive_identity_args=(
+  --set-string "nereus.bookkeeperWal.providerScopeSha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  --set-string "nereus.bookkeeperWal.ledgerIdNamespaceReservationId=11111111-1111-4111-8111-111111111111"
+  --set-string "nereus.admin.operatorEvidenceSha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+)
 
 expect_failure() {
   local name="$1"
@@ -49,16 +54,44 @@ expect_failure() {
 
 for overlay in "${repo_root}"/examples/nereus-benchmark/values-stage-*.yaml; do
   name="$(basename "${overlay}" .yaml)"
-  helm lint "${chart}" -f "${common}" -f "${overlay}"
+  helm lint "${chart}" \
+    -f "${common}" \
+    -f "${overlay}" \
+    "${positive_identity_args[@]}"
   helm template pulsar "${chart}" \
     --namespace pulsar \
     -f "${common}" \
     -f "${overlay}" \
+    "${positive_identity_args[@]}" \
     > "${temporary_dir}/${name}.yaml"
 done
 
 stage_a_manifest="${temporary_dir}/values-stage-a-apache.yaml"
 stage_b_manifest="${temporary_dir}/values-stage-b-dormant.yaml"
+oxia_server_manifest="${temporary_dir}/oxia-server.yaml"
+oxia_coordinator_manifest="${temporary_dir}/oxia-coordinator.yaml"
+awk '
+  /^# Source: pulsar\/templates\/oxia-server-statefulset.yaml$/ {
+    capture = 1
+  }
+  capture {
+    print
+  }
+  capture && /^---$/ {
+    exit
+  }
+' "${stage_a_manifest}" > "${oxia_server_manifest}"
+awk '
+  /^# Source: pulsar\/templates\/oxia-coordinator-deployment.yaml$/ {
+    capture = 1
+  }
+  capture {
+    print
+  }
+  capture && /^---$/ {
+    exit
+  }
+' "${stage_a_manifest}" > "${oxia_coordinator_manifest}"
 if grep -Eq 'pulsar-nereus-admin|nereusEnabled:' \
     "${stage_a_manifest}"; then
   die "stage A unexpectedly renders Nereus admin or Broker configuration"
@@ -71,6 +104,60 @@ grep -F 'pulsar-nereus-admin' "${stage_b_manifest}" >/dev/null \
   || die "stage B did not render the Nereus admin ConfigMap"
 grep -F -- '- /dev/termination-log' "${stage_b_manifest}" >/dev/null \
   || die "stage B bootstrap does not preserve termination evidence"
+grep -F \
+  'nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64' \
+  "${stage_a_manifest}" >/dev/null \
+  || die "stage A did not render the frozen Apache Pulsar image"
+grep -F \
+  'nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "stage B did not render the frozen Nereus Pulsar image"
+grep -F \
+  'nereus-benchmark/nereus-admin:v0.1.0-n78a15445-amd64' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "stage B did not render the frozen Nereus admin image"
+grep -F 'metadataStoreUrl: "oxia://pulsar-oxia-svc:6648/broker"' \
+  "${stage_a_manifest}" >/dev/null \
+  || die "the Pulsar metadata path is not using Oxia"
+grep -F \
+  'bookkeeperMetadataServiceUri: "metadata-store:oxia://pulsar-oxia-svc:6648/bookkeeper"' \
+  "${stage_a_manifest}" >/dev/null \
+  || die "the BookKeeper metadata path is not using Oxia"
+if grep -Eq \
+    '^[[:space:]]*(name: pulsar-zookeeper|component: zookeeper|metadataStoreUrl: "zk|bookkeeperMetadataServiceUri: "zk)' \
+    "${stage_a_manifest}"; then
+  die "stage A unexpectedly rendered a ZooKeeper resource or metadata URL"
+fi
+grep -F 'storageClassName: local-zk' "${oxia_server_manifest}" >/dev/null \
+  || die "Oxia did not reuse the local-zk storage class"
+grep -F 'storage: 47Gi' "${oxia_server_manifest}" >/dev/null \
+  || die "Oxia storage size is not synchronized with ZooKeeper"
+for oxia_manifest in "${oxia_server_manifest}" "${oxia_coordinator_manifest}"; do
+  grep -F 'image: "oxia/oxia:0.16.7"' "${oxia_manifest}" >/dev/null \
+    || die "Oxia did not render the frozen image tag"
+  grep -F 'imagePullPolicy: "Never"' "${oxia_manifest}" >/dev/null \
+    || die "Oxia image pull policy is not immutable/local"
+  grep -F 'cpu: 2' "${oxia_manifest}" >/dev/null \
+    || die "Oxia CPU resources are not synchronized with ZooKeeper"
+  grep -F 'memory: 2Gi' "${oxia_manifest}" >/dev/null \
+    || die "Oxia memory requests are not synchronized with ZooKeeper"
+  grep -F 'memory: 2304Mi' "${oxia_manifest}" >/dev/null \
+    || die "Oxia memory limits are not synchronized with ZooKeeper"
+done
+
+helm template pulsar "${chart}" \
+  --namespace pulsar-benchmark \
+  -f "${common}" \
+  -f "${repo_root}/examples/nereus-benchmark/values-stage-a-apache.yaml" \
+  "${positive_identity_args[@]}" \
+  > "${temporary_dir}/namespace-override.yaml"
+grep -Eq '^[[:space:]]*namespace: pulsar-benchmark$' \
+  "${temporary_dir}/namespace-override.yaml" \
+  || die "the release namespace was not propagated to rendered resources"
+if grep -Eq '^[[:space:]]*namespace: pulsar$' \
+    "${temporary_dir}/namespace-override.yaml"; then
+  die "values-common.yaml still pins rendered resources to the pulsar namespace"
+fi
 
 for load_manager in \
   org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl \
@@ -80,6 +167,7 @@ for load_manager in \
     --namespace pulsar \
     -f "${common}" \
     -f "${repo_root}/examples/nereus-benchmark/values-stage-b-dormant.yaml" \
+    "${positive_identity_args[@]}" \
     --set-string "broker.configData.loadManagerClassName=${load_manager}" \
     > "${temporary_dir}/load-manager-$(basename "${load_manager}")"
 done
@@ -170,5 +258,15 @@ expect_failure \
   "SeaweedFS requires persistent storage" \
   --set nereus.objectStore.seaweedfs.persistence.enabled=false \
   --set-string nereus.objectStore.seaweedfs.persistence.existingClaim=
+
+campaign_preflight_output="${temporary_dir}/missing-campaign.txt"
+if NEREUS_EXPECTED_CONTEXT=not-used \
+    "${repo_root}/scripts/deploy-nereus-stage.sh" A \
+    >"${campaign_preflight_output}" 2>&1; then
+  die "deployment preflight unexpectedly accepted a missing campaign identity"
+fi
+grep -F "NEREUS_CAMPAIGN_VALUES is required for stages A-E" \
+  "${campaign_preflight_output}" >/dev/null \
+  || die "deployment preflight failed for the wrong missing-campaign reason"
 
 echo "Nereus Helm render matrix passed"

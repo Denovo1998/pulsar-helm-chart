@@ -730,6 +730,9 @@ oxia:
         #   regex: cluster
     cpuLimit: 100m
     memoryLimit: 128Mi
+    # Optional requests/limits map. When set, this replaces the legacy
+    # cpuLimit/memoryLimit-only resources block.
+    resources: {}
     ports:
       internal: 6649
       metrics: 8080
@@ -774,6 +777,9 @@ oxia:
     cpuLimit: 1
     # Memory limit for the server pod
     memoryLimit: 1Gi
+    # Optional requests/limits map. When set, this replaces the legacy
+    # cpuLimit/memoryLimit-only resources block.
+    resources: {}
     # Oxia database cache size in MB
     dbCacheSizeMb: 512
     # Whether the Oxia server fsyncs write-ahead-log data to disk after each write.
@@ -784,6 +790,8 @@ oxia:
     walSyncData: "true"
     # Storage size for the PVC of the server pod
     storageSize: 8Gi
+    # Use the chart-wide local-storage fallback when storageClassName is empty.
+    local_storage: false
     # Storage class name for the PVC of the server pod
     # storageClassName: existent-storage-class
     ports:

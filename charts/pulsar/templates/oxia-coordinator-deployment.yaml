@@ -76,10 +76,15 @@ spec:
             - containerPort: {{ $value | int }}
               name: {{ $key }}
             {{- end}}
+          {{- if .Values.oxia.coordinator.resources }}
+          resources:
+            {{- toYaml .Values.oxia.coordinator.resources | nindent 12 }}
+          {{- else }}
           resources:
             limits:
               cpu: {{ .Values.oxia.coordinator.cpuLimit }}
               memory: {{ .Values.oxia.coordinator.memoryLimit }}
+          {{- end }}
       {{- if .Values.oxia.coordinator.extraVolumeMounts }}
           volumeMounts:
         {{- toYaml .Values.oxia.coordinator.extraVolumeMounts | nindent 12 }}

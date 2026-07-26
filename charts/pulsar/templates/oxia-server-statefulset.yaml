@@ -132,10 +132,15 @@ spec:
             - containerPort: {{ $value | int }}
               name: {{ $key }}
             {{- end}}
+          {{- if .Values.oxia.server.resources }}
+          resources:
+            {{- toYaml .Values.oxia.server.resources | nindent 12 }}
+          {{- else }}
           resources:
             limits:
               cpu: {{ .Values.oxia.server.cpuLimit }}
               memory: {{ .Values.oxia.server.memoryLimit }}
+          {{- end }}
           volumeMounts:
             - name: {{ template "pulsar.fullname" . }}-{{ .Values.oxia.component }}-data
               mountPath: /data
@@ -152,6 +157,8 @@ spec:
         accessModes: [ "ReadWriteOnce" ]
         {{- if .Values.oxia.server.storageClassName }}
         storageClassName: {{ .Values.oxia.server.storageClassName }}
+        {{- else if and .Values.volumes.local_storage .Values.oxia.server.local_storage }}
+        storageClassName: "local-storage"
         {{- end}}
         resources:
           requests:

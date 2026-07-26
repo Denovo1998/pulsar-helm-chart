@@ -20,7 +20,7 @@
 images:
   broker:
     repository: nereus-benchmark/pulsar
-    tag: 5.0.0-m1-nereus-p00000000-n00000000-amd64
+    tag: 5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64
     pullPolicy: Never
 
 broker:

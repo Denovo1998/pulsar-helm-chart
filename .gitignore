@@ -14,6 +14,10 @@
 charts/**/*.tgz
 charts/**/*.lock
 
+# Per-cluster Nereus benchmark identity (generated from the campaign evidence).
+examples/nereus-benchmark/values-campaign.yaml
+examples/nereus-benchmark/values-campaign.operator-evidence.txt
+
 PRIVATEKEY
 PUBLICKEY
 .vagrant/
