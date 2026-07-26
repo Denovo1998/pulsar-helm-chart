@@ -340,6 +340,8 @@ fi
 
 campaign_preflight_output="${temporary_dir}/missing-campaign.txt"
 if NEREUS_EXPECTED_CONTEXT=not-used \
+    NEREUS_CAMPAIGN_VALUES= \
+    NEREUS_OPERATOR_EVIDENCE_FILE= \
     "${repo_root}/scripts/deploy-nereus-stage.sh" A \
     >"${campaign_preflight_output}" 2>&1; then
   die "deployment preflight unexpectedly accepted a missing campaign identity"
