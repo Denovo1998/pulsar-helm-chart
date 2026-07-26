@@ -44,20 +44,34 @@ resolve_runtime_config_id() {
   local image="$1"
   local expected_target_digest="$2"
   local label="$3"
-  local native_inspect
+  local image_listing
   local target_digest
   local config_id
 
-  native_inspect="$(run_nerdctl image inspect --mode native "${image}")" \
-    || die "could not inspect the local ${label} OCI target: ${image}"
+  image_listing="$(
+    run_nerdctl images \
+      --digests \
+      --no-trunc \
+      --format '{{json .}}' \
+      "${image}"
+  )" || die "could not list the local ${label} OCI target: ${image}"
   target_digest="$(
-    jq -er '
-      (if type == "array" then .[0] else . end)
-      | (.Target.digest // .Target.Digest
-          // .target.digest // .target.Digest)
-      | select(test("^sha256:[0-9a-f]{64}$"))
-    ' <<<"${native_inspect}"
-  )" || die "local ${label} image has no OCI target digest: ${image}"
+    jq -Rser '
+      [
+        split("\n")[]
+        | select(test("\\S"))
+        | fromjson
+        | (.Digest // .digest // .DIGEST // empty)
+        | select(type == "string")
+      ]
+      | unique
+      | if length == 1
+          and (.[0] | test("^sha256:[0-9a-f]{64}$"))
+        then .[0]
+        else empty
+        end
+    ' <<<"${image_listing}"
+  )" || die "local ${label} image has no unique OCI target digest: ${image}"
   [[ "${target_digest}" == "${expected_target_digest}" ]] \
     || die "local ${label} OCI target digest ${target_digest} does not match frozen digest ${expected_target_digest}"
 

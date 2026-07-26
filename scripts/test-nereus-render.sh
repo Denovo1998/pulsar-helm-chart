@@ -324,13 +324,19 @@ expect_failure \
   --set-string nereus.objectStore.seaweedfs.persistence.existingClaim=
 
 for deployment_identity_guard in \
-  'image inspect --mode native' \
+  'run_nerdctl images' \
+  '--digests' \
+  "--format '{{json .}}'" \
   'APACHE_IMAGE_CONFIG_ID' \
   '-l "release=${release}" -o json'; do
   grep -F -- "${deployment_identity_guard}" \
     "${repo_root}/scripts/deploy-nereus-stage.sh" >/dev/null \
     || die "deployment image identity guard is missing: ${deployment_identity_guard}"
 done
+if grep -F -- 'image inspect --mode native' \
+    "${repo_root}/scripts/deploy-nereus-stage.sh" >/dev/null; then
+  die "deployment image identity guard still depends on unstable native inspect output"
+fi
 
 campaign_preflight_output="${temporary_dir}/missing-campaign.txt"
 if NEREUS_EXPECTED_CONTEXT=not-used \

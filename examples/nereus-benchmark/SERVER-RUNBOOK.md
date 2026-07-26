@@ -216,9 +216,13 @@ kubectl -n pulsar describe pod <SEAWEEDFS_POD>
 镜像构建 manifest 中的 `APACHE_IMAGE_ID`、`NEREUS_IMAGE_ID` 和
 `NEREUS_ADMIN_IMAGE_ID` 是 OCI manifest/target digest。containerd CRI
 向 Kubernetes Pod 状态报告的是 image config ID，两者都是 SHA-256，
-但数值不同。部署脚本会先通过 `nerdctl image inspect --mode native`
-证明本地 tag 的 OCI target 与冻结 manifest 一致，再把该 target 映射到
+但数值不同。部署脚本会先通过
+`nerdctl images --digests --no-trunc --format '{{json .}}'` 读取本地
+tag 的 OCI target 并与冻结 manifest 核对，再把该 target 映射到
 Docker-compatible inspect 的 config ID，最后用 config ID 校验 Pod。
+这里不使用 `image inspect --mode native`：不同 nerdctl/containerd 组合
+的 native inspect 输出结构并不稳定，有些版本只返回 config JSON，
+没有 `.Target.digest`。
 不要直接拿 `nerdctl images` 的 DIGEST 列与 Pod `imageID` 比较。
 
 ## 4. 准备静态存储
