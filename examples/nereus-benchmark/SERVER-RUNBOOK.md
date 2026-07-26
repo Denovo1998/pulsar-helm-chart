@@ -28,7 +28,9 @@ under the License.
 - 对象存储节点：`denovo-win-1`，标签
   `workload=apps,nereus-object-store=true`
 - A–E 使用同一份 campaign identity 和 Secret
-- 每个 Stage 测试后执行冷重置，再安装下一组
+- SeaweedFS 固定 4 CPU/4 GiB，OMB 固定两个 2 CPU/6 GiB worker
+- 每个 `(suite, rate, stage, repetition)` 测试后执行冷重置，再安装下一组
+- OMB release 在整个 campaign 中保持运行，不参与每轮 Pulsar 冷重置
 
 `deploy-nereus-stage.sh` 内部执行 `helm install`。不要再额外执行一遍
 `helm install`。`reset-nereus-benchmark-stage.sh --execute` 内部执行
@@ -47,16 +49,23 @@ export NEREUS_SECRET_NAME='pulsar-nereus-secrets'
 export NEREUS_CAMPAIGN_VALUES='/root/denovo/nereus-campaign/values-campaign.yaml'
 export NEREUS_OPERATOR_EVIDENCE_FILE='/root/denovo/nereus-campaign/values-campaign.operator-evidence.txt'
 export NEREUS_RESULTS_ROOT='/root/denovo/nereus-campaign/results'
+export OMB_RELEASE='omb'
+export OMB_REPO='/root/denovo/benchmark'
+export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
+export OMB_VALUES='/root/denovo/nereus-campaign/values-omb-apps.yaml'
+export OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
+export CAMPAIGN_ID='v010-202607'
 ```
 
 检查当前上下文和固定身份：
 
 ```bash
-printf 'context=%s\nrelease=%s\nnamespace=%s\ncluster=%s\n' \
+printf 'context=%s\nrelease=%s\nnamespace=%s\ncluster=%s\nombRelease=%s\n' \
   "${NEREUS_EXPECTED_CONTEXT}" \
   "${NEREUS_RELEASE}" \
   "${NEREUS_NAMESPACE}" \
-  "${NEREUS_CLUSTER}"
+  "${NEREUS_CLUSTER}" \
+  "${OMB_RELEASE}"
 ```
 
 如果已经用其他 release 或 namespace 生成过 campaign，不能复用。检查：
@@ -407,66 +416,502 @@ test -r "${NEREUS_OPERATOR_EVIDENCE_FILE}"
 旧 `beijing-1` 集群不能与性能基准同时运行。部署脚本还会拒绝已存在的
 `pulsar/nereus` release 和上一 Stage 遗留的核心数据 PVC。
 
-## 8. 部署并测试 Stage A
+## 8. 构建并部署 OMB
+
+OMB release 固定为 `pulsar/omb`，在 A–E 之间保持运行。当前 Helm
+driver Pod 只写入 `example-run.sh` 后执行 `tail -f /dev/null`；正式
+coordinator 由 `denovo-win-1` 上的 `run-case.sh` 启动。镜像构建、
+`helm upgrade --install`、rollout 检查和 worker 地址生成都在主节点执行；
+`nodeSelector: workload=apps` 使两个 worker Pod 和空闲 driver Pod 实际
+运行在 apps 节点。主节点只做控制面操作，不运行 OMB Pod。
+
+### 8.1 在两个节点准备相同的 OMB 源码
+
+主节点负责构建镜像，apps 节点只编译并运行宿主机 coordinator。两个节点必须
+使用完全相同的 `pulsar` 分支 commit。分别在两个节点首次执行：
 
 ```bash
-STAGE=A
+mkdir -p /root/denovo
+git clone \
+  --branch pulsar \
+  https://github.com/Denovo1998/benchmark.git \
+  /root/denovo/benchmark
+```
 
+分别在两个节点后续更新：
+
+```bash
+cd /root/denovo/benchmark
+git checkout pulsar
+git pull --ff-only origin pulsar
+git status --short
+```
+
+两个节点的 `git status --short` 都必须为空。在主节点比较 source SHA：
+
+```bash
+MAIN_OMB_SHA="$(git -C /root/denovo/benchmark rev-parse HEAD)"
+APPS_OMB_SHA="$(
+  ssh root@denovo-win-1 \
+    'git -C /root/denovo/benchmark rev-parse HEAD'
+)"
+
+printf 'main=%s\napps=%s\n' "${MAIN_OMB_SHA}" "${APPS_OMB_SHA}"
+test "${MAIN_OMB_SHA}" = "${APPS_OMB_SHA}"
+```
+
+只在 apps 节点为宿主机 coordinator 编译：
+
+```bash
+cd /root/denovo/benchmark
+java -version
+mvn -version
+mvn install -DskipTests
+```
+
+不要给 Maven 增加 `-T`；多个模块并发执行 Spotless 会争用同一把锁。
+
+### 8.2 在主节点构建并传输不可变 OMB 镜像
+
+固定由 `denovo-r730-1` 构建所有 campaign 镜像，复用构建 Pulsar/Nereus
+镜像时已经可用的 BuildKit。apps 节点不安装 BuildKit。先在主节点检查：
+
+```bash
+command -v nerdctl
+command -v buildctl
+buildctl --version
+buildkitd --version
+ps -ef | grep '[b]uildkitd'
+find /run -maxdepth 2 -name buildkitd.sock -ls
+```
+
+Nereus 三个镜像已经在该节点通过 `nerdctl build` 构建成功，因此这里不改变
+BuildKit 配置。然后在主节点执行：
+
+```bash
+cd /root/denovo/benchmark
+mkdir -p \
+  /root/denovo/images \
+  /root/denovo/nereus-campaign
+
+set -o pipefail
+./scripts/nereus-benchmark/build-omb-image.sh 2>&1 |
+tee /root/denovo/nereus-campaign/omb-image-build.log
+
+grep -E '^(IMAGE_REF|IMAGE_DIGEST|SOURCE_SHA)=' \
+  /root/denovo/nereus-campaign/omb-image-build.log \
+  > /root/denovo/nereus-campaign/omb-image.env
+
+test "$(wc -l < /root/denovo/nereus-campaign/omb-image.env)" -eq 3
+source /root/denovo/nereus-campaign/omb-image.env
+printf 'image=%s\ndigest=%s\nsource=%s\n' \
+  "${IMAGE_REF}" "${IMAGE_DIGEST}" "${SOURCE_SHA}"
+```
+
+保存归档和两个匹配的 sidecar：
+
+```bash
+./scripts/nereus-benchmark/containerd-transfer-omb-image.sh save \
+  "${IMAGE_REF}" \
+  /root/denovo/images/omb-pulsar-amd64.tar
+
+ls -l \
+  /root/denovo/images/omb-pulsar-amd64.tar \
+  /root/denovo/images/omb-pulsar-amd64.tar.sha256 \
+  /root/denovo/images/omb-pulsar-amd64.tar.env
+```
+
+checksum 文件固定是 `<tar>.sha256`，不是 `<env>.sha256`。在主节点创建
+apps 节点目录并复制镜像、校验文件、构建 identity 和 transfer 脚本：
+
+```bash
+ssh root@denovo-win-1 \
+  'mkdir -p /root/denovo/images /root/denovo/nereus-campaign'
+
+scp \
+  /root/denovo/images/omb-pulsar-amd64.tar \
+  /root/denovo/images/omb-pulsar-amd64.tar.sha256 \
+  /root/denovo/images/omb-pulsar-amd64.tar.env \
+  /root/denovo/benchmark/scripts/nereus-benchmark/containerd-transfer-omb-image.sh \
+  root@denovo-win-1:/root/denovo/images/
+
+scp \
+  /root/denovo/nereus-campaign/omb-image.env \
+  /root/denovo/nereus-campaign/omb-image-build.log \
+  root@denovo-win-1:/root/denovo/nereus-campaign/
+```
+
+在 apps 节点导入到 Kubernetes 使用的 `k8s.io` containerd namespace：
+
+```bash
+cd /root/denovo/images
+chmod +x containerd-transfer-omb-image.sh
+
+./containerd-transfer-omb-image.sh load \
+  omb-pulsar-amd64.tar \
+  omb-pulsar-amd64.tar.env
+```
+
+确认 apps 源码、镜像 identity 和 containerd digest 完全一致：
+
+```bash
+source /root/denovo/nereus-campaign/omb-image.env
+test "$(git -C /root/denovo/benchmark rev-parse --short=12 HEAD)" = \
+  "${SOURCE_SHA}"
+
+nerdctl --namespace k8s.io images \
+  --digests --no-trunc |
+grep 'nereus-benchmark/openmessaging-benchmark'
+```
+
+### 8.3 给 apps 节点准备 Kubernetes context
+
+`run-case.sh` 会验证当前 context 是否与 Pulsar deployment evidence
+一致。在控制节点执行一次：
+
+```bash
+ssh root@denovo-win-1 'mkdir -p /root/.kube && chmod 700 /root/.kube'
+scp /root/.kube/config root@denovo-win-1:/root/.kube/config
+ssh root@denovo-win-1 'chmod 600 /root/.kube/config'
+```
+
+该文件包含集群凭据，只允许 root 读取，不得提交到仓库。然后在 apps
+节点验证：
+
+```bash
+kubectl config current-context
+kubectl get node denovo-win-1
+```
+
+context 必须与控制节点的 `NEREUS_EXPECTED_CONTEXT` 完全一致。
+
+### 8.4 生成 OMB values 并安装两个 worker
+
+在主节点生成 values 并通过 Helm 部署：
+
+```bash
+export OMB_RELEASE='omb'
+export OMB_REPO='/root/denovo/benchmark'
+export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
+export OMB_VALUES='/root/denovo/nereus-campaign/values-omb-apps.yaml'
+export OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
+
+source "${OMB_IMAGE_ENV}"
+
+cat > "${OMB_VALUES}" <<EOF
+numWorkers: 2
+image: ${IMAGE_REF}
+# 本地 containerd + Never 必须使用已经导入的精确 tag。IMAGE_DIGEST 仍由
+# transfer load 校验，并写入 OMB manifest，不能拼成 tag@digest。
+imageDigest: ""
+imagePullPolicy: Never
+
+driverNodeSelector:
+  workload: apps
+workerNodeSelector:
+  workload: apps
+
+driverTolerations:
+  - key: dedicated
+    operator: Equal
+    value: apps
+    effect: NoSchedule
+workerTolerations:
+  - key: dedicated
+    operator: Equal
+    value: apps
+    effect: NoSchedule
+
+# 当前 driver Pod 是空闲 launcher；正式 coordinator 在宿主机运行。
+driverCpuRequest: 500m
+driverCpuLimit: 500m
+driverMemoryRequest: 1Gi
+driverMemoryLimit: 1Gi
+driverHeapOpts: "-Xms512m -Xmx512m"
+
+# benchmark-worker 默认使用 4 GiB heap，额外保留 2 GiB native memory。
+workersCpuRequest: 2000m
+workersCpuLimit: 2000m
+workersMemoryRequest: 6Gi
+workersMemoryLimit: 6Gi
+
+results:
+  enabled: false
+EOF
+
+cd "${OMB_REPO}"
+helm template "${OMB_RELEASE}" \
+  deployment/kubernetes/helm/benchmark \
+  --namespace pulsar \
+  -f "${OMB_VALUES}" \
+  > /tmp/omb-rendered.yaml
+
+grep -F "image: ${IMAGE_REF}" /tmp/omb-rendered.yaml
+if grep -q '@sha256:' /tmp/omb-rendered.yaml; then
+  echo 'ERROR: local Never deployment must not render tag@digest' >&2
+  exit 1
+fi
+
+helm upgrade --install "${OMB_RELEASE}" \
+  deployment/kubernetes/helm/benchmark \
+  --namespace pulsar \
+  -f "${OMB_VALUES}"
+```
+
+等待两个 worker 和 driver：
+
+```bash
+kubectl -n pulsar rollout status \
+  statefulset/omb-worker \
+  --timeout=10m
+kubectl -n pulsar wait \
+  --for=condition=Ready \
+  pod/omb-driver \
+  --timeout=10m
+kubectl -n pulsar get pods \
+  -l app=omb \
+  -o wide
+```
+
+三个 Pod 都必须位于 `denovo-win-1`。生成固定 worker 文件：
+
+```bash
+printf 'workers:\n' > "${OMB_WORKERS_FILE}"
+kubectl -n pulsar get pods \
+  -l 'app=omb,component=worker' \
+  -o jsonpath='{range .items[*]}  - http://{.status.podIP}:8080{"\n"}{end}' \
+  >> "${OMB_WORKERS_FILE}"
+
+cat "${OMB_WORKERS_FILE}"
+test "$(grep -c '^  - http://' "${OMB_WORKERS_FILE}")" -eq 2
+```
+
+把最终 values 和 worker 地址文件同步到实际运行 coordinator 的 apps
+节点：
+
+```bash
+scp \
+  "${OMB_VALUES}" \
+  "${OMB_WORKERS_FILE}" \
+  root@denovo-win-1:/root/denovo/nereus-campaign/
+
+ssh root@denovo-win-1 \
+  "test \"\$(grep -c '^  - http://' '${OMB_WORKERS_FILE}')\" -eq 2"
+```
+
+## 9. 单次冷启动测试闭环
+
+一次测试只允许一个 `(suite, rate, stage, repetition)`。即使 Stage 相同，
+更换 rate、message size 或 suite 也必须执行冷重置并重新安装。不要在一个
+Pulsar deployment 上连续跑多个正式用例。
+
+### 9.1 控制节点安装一个 Stage
+
+设置本轮唯一身份。下面以 Stage C 的 S1 为例：
+
+```bash
+cd /root/pulsar-helm-chart
+
+STAGE=C
+BLOCK_ID=block-01-s1
+REPETITION=1
+SEED=202607250101
+RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-$(printf '%02d' "${REPETITION}")"
+```
+
+Stage A：
+
+```bash
 ./scripts/deploy-nereus-stage.sh "${STAGE}"
 ./scripts/verify-nereus-release.sh "${STAGE}"
 ```
 
-部署成功后查看脚本创建的测试目标：
+Stage B–E：
 
 ```bash
-source "${NEREUS_RESULTS_ROOT}/deploy/latest.env"
-printf 'tenant=%s\nnamespace=%s\ntopic=%s\n' \
-  "${BENCHMARK_TENANT}" \
-  "${BENCHMARK_NAMESPACE}" \
-  "${BENCHMARK_TOPIC}"
-```
-
-运行 Stage A 性能测试。结束时先停止所有生产者和消费者。
-
-## 9. 部署并测试 Stage B–E
-
-每个 Stage 必须在上一 Stage 冷重置完成后安装。以 B 为例：
-
-```bash
-STAGE=B
-
 ./scripts/deploy-nereus-stage.sh "${STAGE}"
 ./scripts/activate-nereus-publications.sh "${STAGE}"
 ./scripts/run-object-store-contract.sh
 ./scripts/verify-nereus-release.sh "${STAGE}"
 ```
 
-C、D、E 使用同样流程，只修改 `STAGE`：
-
-```bash
-STAGE=C
-# 或 STAGE=D
-# 或 STAGE=E
-```
-
 对应关系：
 
-| Stage | Broker 与数据路径 |
-| --- | --- |
-| A | Apache Pulsar 基线 |
-| B | Nereus dormant，原生 `bookkeeper` storage class |
-| C | Nereus `BOOKKEEPER_WAL_ONLY` |
-| D | Nereus `BOOKKEEPER_WAL_ASYNC_OBJECT` |
-| E | Nereus `BOOKKEEPER_WAL_SYNC_OBJECT` |
+| Stage | Broker 与数据路径 | namespace storage class |
+| --- | --- | --- |
+| A | Apache Pulsar 基线 | `bookkeeper` |
+| B | Nereus dormant，原生 BookKeeper | `bookkeeper` |
+| C | `BOOKKEEPER_WAL_ONLY` | `nereus` |
+| D | `BOOKKEEPER_WAL_ASYNC_OBJECT` | `nereus` |
+| E | `BOOKKEEPER_WAL_SYNC_OBJECT` | `nereus` |
 
-## 10. 每个 Stage 结束后关闭并冷重置
+部署成功后才会更新：
 
-先停止全部压测客户端，再执行：
+```text
+/root/denovo/nereus-campaign/results/deploy/latest.env
+```
+
+把本轮 deployment evidence 同步到 apps 节点的相同绝对路径：
+
+```bash
+rsync -a \
+  "${NEREUS_RESULTS_ROOT}/deploy/" \
+  root@denovo-win-1:"${NEREUS_RESULTS_ROOT}/deploy/"
+```
+
+### 9.2 apps 节点准备 driver
+
+```bash
+cd /root/denovo/benchmark
+
+export NEREUS_NAMESPACE='pulsar'
+export NEREUS_RELEASE='nereus'
+export NEREUS_RESULTS_ROOT='/root/denovo/nereus-campaign/results'
+export NEREUS_RUN_ENV="${NEREUS_RESULTS_ROOT}/deploy/latest.env"
+export OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
+export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
+export CAMPAIGN_ID='v010-202607'
+export HEAP_OPTS='-Xms2G -Xmx2G'
+
+source "${NEREUS_RUN_ENV}"
+source "${OMB_IMAGE_ENV}"
+
+OMB_FULL_GIT_SHA="$(git rev-parse HEAD)"
+test "${OMB_FULL_GIT_SHA:0:${#SOURCE_SHA}}" = "${SOURCE_SHA}"
+
+mapfile -t OMB_RUNTIME_IDS < <(
+  kubectl -n pulsar get pods -l app=omb -o json |
+  jq -r '.items[].status.containerStatuses[]?.imageID' |
+  sort -u
+)
+test "${#OMB_RUNTIME_IDS[@]}" -eq 1
+
+export OMB_GIT_SHA="${OMB_FULL_GIT_SHA}"
+export OMB_IMAGE_REF="${IMAGE_REF}"
+export OMB_IMAGE_DIGEST="${IMAGE_DIGEST}"
+export OMB_RUNTIME_CONFIG_ID="${OMB_RUNTIME_IDS[0]}"
+
+export PULSAR_CLUSTER="${CLUSTER}"
+export PULSAR_SERVICE_URL="pulsar://$(kubectl -n pulsar get service nereus-broker -o jsonpath='{.spec.clusterIP}'):6650"
+export PULSAR_HTTP_URL="http://$(kubectl -n pulsar get service nereus-broker -o jsonpath='{.spec.clusterIP}'):8080"
+
+BLOCK_ID=block-01-s1
+REPETITION=1
+SEED=202607250101
+RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-$(printf '%02d' "${REPETITION}")"
+DRIVER_YAML="/root/denovo/nereus-campaign/${RUN_ID}-driver.yaml"
+
+./scripts/nereus-benchmark/render-run-config.sh \
+  "${STAGE}" \
+  "${BLOCK_ID}" \
+  "${RUN_ID}" \
+  "${REPETITION}" \
+  "${SEED}" \
+  "${DRIVER_YAML}"
+
+./scripts/nereus-benchmark/validate-run-config.sh "${DRIVER_YAML}"
+```
+
+同一 block 的 A–E 必须使用相同 `SEED`。下一 block 才能换 seed。
+正式 driver 必须由 `pulsar-stage-template.yaml` 渲染，不能直接使用
+`driver-pulsar/pulsar.yaml`。
+
+### 9.3 保存 CPUSet 证据
+
+在 apps 节点：
+
+```bash
+RESULT_DIR="/root/denovo/benchmark/results/${CAMPAIGN_ID}/${RUN_ID}"
+mkdir -p "${RESULT_DIR}"
+
+{
+  printf 'capturedAt=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '\n[cpu-manager-state]\n'
+  cat /var/lib/kubelet/cpu_manager_state
+  printf '\n[seaweedfs]\n'
+  kubectl -n pulsar exec nereus-seaweedfs-0 -- \
+    sh -c 'grep Cpus_allowed_list /proc/1/status'
+  printf '\n[omb-worker-0]\n'
+  kubectl -n pulsar exec omb-worker-0 -- \
+    sh -c 'grep Cpus_allowed_list /proc/1/status'
+  printf '\n[omb-worker-1]\n'
+  kubectl -n pulsar exec omb-worker-1 -- \
+    sh -c 'grep Cpus_allowed_list /proc/1/status'
+} > "${RESULT_DIR}/cpu-allocation.txt"
+```
+
+SeaweedFS 必须得到 `0-11` 中两个完整 sibling pair；两个 worker 必须各
+得到一个完整 sibling pair。三个结果都不能包含 E-Core `12-15`。
+
+### 9.4 执行一个 workload
+
+S1 smoke：
+
+```bash
+taskset -c 12-15 \
+  ./scripts/nereus-benchmark/run-case.sh \
+  "${DRIVER_YAML}" \
+  workloads/nereus-v0.1.0/s1-smoke.yaml \
+  "${OMB_WORKERS_FILE}"
+```
+
+`taskset` 只限制低负载的宿主机 coordinator；真正创建 producer/consumer
+的是两个独占 P-Core 的 worker Pod。
+
+检查结果：
+
+```bash
+RESULT_DIR="/root/denovo/benchmark/results/${CAMPAIGN_ID}/${RUN_ID}"
+
+test -r "${RESULT_DIR}/manifest.json"
+test -r "${RESULT_DIR}/result.json"
+
+jq -r \
+  '.runtimeInfo.attributes["persistence.managedLedgerStorageClassName"]' \
+  "${RESULT_DIR}/manifest.json"
+
+./scripts/nereus-benchmark/analyze-run.py \
+  "${RESULT_DIR}/result.json" |
+tee "${RESULT_DIR}/analysis.json"
+```
+
+A/B 必须输出 `bookkeeper`，C/D/E 必须输出 `nereus`。
+
+如果 OMB 被中断，先对两个 worker 显式执行 `stop-all`，不得直接进入清理：
+
+```bash
+sed -n 's/^[[:space:]]*- //p' "${OMB_WORKERS_FILE}" |
+while IFS= read -r worker; do
+  curl --fail --silent --show-error \
+    -X POST "${worker}/stop-all"
+done
+```
+
+### 9.5 把 OMB 结果并入 Stage evidence
+
+在控制节点，重新设置与 apps 节点相同的 `RUN_ID`，然后执行：
+
+```bash
+source "${NEREUS_RESULTS_ROOT}/deploy/latest.env"
+mkdir -p "${RUN_DIR}/omb/${RUN_ID}"
+
+rsync -a \
+  root@denovo-win-1:"/root/denovo/benchmark/results/${CAMPAIGN_ID}/${RUN_ID}/" \
+  "${RUN_DIR}/omb/${RUN_ID}/"
+
+test -r "${RUN_DIR}/omb/${RUN_ID}/manifest.json"
+test -r "${RUN_DIR}/omb/${RUN_ID}/result.json"
+```
+
+只有 OMB 原始结果、manifest、analysis 和 CPUSet 证据均已回传，才能收集
+Helm evidence：
 
 ```bash
 ./scripts/verify-nereus-release.sh "${STAGE}"
 ./scripts/collect-helm-evidence.sh
 ```
+
+### 9.6 冷重置
 
 先生成只读清理计划：
 
@@ -481,17 +926,14 @@ NEREUS_COLD_RESET_CONFIRM="${NEREUS_NAMESPACE}/${NEREUS_RELEASE}/${STAGE}" \
   ./scripts/reset-nereus-benchmark-stage.sh "${STAGE}" --execute
 ```
 
-Stage A 的确认值示例：
+reset 脚本会卸载 `pulsar/nereus`，擦除并删除 3 个 Oxia PVC、12 个
+BookKeeper PVC 和 1 个 SeaweedFS PVC，然后把 `Retain` PV 恢复为
+`Available`。它不会删除：
 
-```bash
-NEREUS_COLD_RESET_CONFIRM='pulsar/nereus/A' \
-  ./scripts/reset-nereus-benchmark-stage.sh A --execute
-```
-
-reset 脚本会卸载 Helm、挂载并擦除 3 个 Oxia PVC、12 个 BookKeeper
-PVC 和 1 个 SeaweedFS PVC，然后删除这些 PVC，并把 `Retain` PV 恢复为
-`Available`。它不会删除 `pulsar` namespace、Secret、campaign 文件和
-测试证据。
+- `pulsar` namespace；
+- `pulsar-nereus-secrets`；
+- campaign identity 和已归档 evidence；
+- 长期运行的 `pulsar/omb` release。
 
 重置后检查：
 
@@ -502,12 +944,193 @@ kubectl get pv \
   -o custom-columns='NAME:.metadata.name,CLASS:.spec.storageClassName,PHASE:.status.phase,CAPACITY:.spec.capacity.storage'
 ```
 
-确认 `pulsar/nereus` release 和 16 个核心数据 PVC 均不存在，所需静态
-PV 都是 `Available`，再安装下一 Stage。
+确认 `pulsar/nereus` 和 16 个核心数据 PVC 均不存在，所需静态 PV 都是
+`Available`，才能安装下一次测试。
 
-如果部署在后置门禁失败，新版脚本仍会保留该次运行自己的
-`RUN_DIR/run.env`，但不会把它提升为 `results/deploy/latest.env`。先从
-错误信息或目录时间找到失败运行，然后显式检查：
+## 10. Workload 选择与命令
+
+| Suite | 文件 | 用途 | 当前参数 |
+| --- | --- | --- | --- |
+| S1 | `s1-smoke.yaml` | 部署 smoke | 16 partitions、50k msg/s、2 分钟 |
+| C1 | `c1-throughput-template.yaml` | 最大可持续吞吐 | 48 partitions、显式 rate |
+| L1 | `l1-latency-template.yaml` | 固定负载延迟 | common ceiling 的 25/50/75% |
+| B1 | `b1-backlog-50g.yaml` | backlog/drain | 50 GiB backlog |
+| R1 | `r1-broker-crash-template.yaml` | Broker crash recovery | common ceiling 约 60% |
+| M1 | `m1-*-template.yaml` | 消息大小敏感性 | 100 B、1 KiB、10 KiB |
+
+### 10.1 C1 每次只跑一个 rate
+
+冷启动规则禁止一次执行默认的整个 rate ladder。每次部署只给
+`run-c1-sweep.sh` 传一个 rate：
+
+```bash
+BLOCK_ID=block-01-c1
+RATE=100000
+RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-${REPETITION}-rate-${RATE}"
+
+taskset -c 12-15 \
+  ./scripts/nereus-benchmark/run-c1-sweep.sh \
+  "${STAGE}" \
+  "${BLOCK_ID}" \
+  "${REPETITION}" \
+  "${SEED}" \
+  "${OMB_WORKERS_FILE}" \
+  "${RATE}"
+```
+
+`run-c1-sweep.sh` 会自行渲染 driver 和 workload；不要使用 9.2 中为 S1
+生成的 `DRIVER_YAML`。在运行前使用上面的 C1 `RUN_ID` 执行 9.3，运行后使用
+同一个 `RUN_ID` 执行 9.5–9.6。下一 rate 必须重新安装对应 Stage。禁止省略
+最后的 `RATE` 参数，否则脚本会在同一集群上连续执行 10 个 candidate，不
+符合本 campaign 的冷启动要求。
+
+初始候选 rate：
+
+```text
+50000 75000 100000 150000 200000 300000 400000 600000 800000 1000000
+```
+
+共同可持续上限取 A–E 五组可持续上限的最小值。
+
+### 10.2 L1、R1 和 M1 替换模板 rate
+
+这些用例先按 9.2 渲染 driver，但必须把 suite 和参数编码进唯一
+`BLOCK_ID/RUN_ID`。把模板复制到本轮唯一文件，再替换 `name` 和
+`producerRate`。以下是 L1 的示例：
+
+```bash
+BLOCK_ID=block-01-l1-p50
+RATE=75000
+RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-$(printf '%02d' "${REPETITION}")"
+DRIVER_YAML="/root/denovo/nereus-campaign/${RUN_ID}-driver.yaml"
+WORKLOAD_TEMPLATE='workloads/nereus-v0.1.0/l1-latency-template.yaml'
+WORKLOAD_YAML="/root/denovo/nereus-campaign/${RUN_ID}-workload.yaml"
+
+./scripts/nereus-benchmark/render-run-config.sh \
+  "${STAGE}" \
+  "${BLOCK_ID}" \
+  "${RUN_ID}" \
+  "${REPETITION}" \
+  "${SEED}" \
+  "${DRIVER_YAML}"
+
+./scripts/nereus-benchmark/validate-run-config.sh "${DRIVER_YAML}"
+
+python3 - \
+  "${WORKLOAD_TEMPLATE}" \
+  "${WORKLOAD_YAML}" \
+  "${RATE}" \
+  "${RUN_ID}" <<'PY'
+import pathlib
+import sys
+
+source, target, rate, run_id = sys.argv[1:]
+text = pathlib.Path(source).read_text()
+lines = text.splitlines()
+for index, line in enumerate(lines):
+    if line.startswith("name: "):
+        lines[index] = f"name: nereus-v010-{run_id}"
+        break
+text = "\n".join(lines) + "\n"
+text = text.replace("producerRate: 100000", f"producerRate: {rate}")
+pathlib.Path(target).write_text(text)
+PY
+
+taskset -c 12-15 \
+  ./scripts/nereus-benchmark/run-case.sh \
+  "${DRIVER_YAML}" \
+  "${WORKLOAD_YAML}" \
+  "${OMB_WORKERS_FILE}"
+```
+
+先用最终 `RUN_ID` 执行 9.3，再启动负载。对每个 Stage，L1 的三个 rate 和
+M1 的三种 message size 合计六个独立冷启动测试；不得在同一 Pulsar
+deployment 中连续执行。
+
+### 10.3 B1
+
+B1 当前固定 50 GiB backlog 和 100k msg/s：
+
+```bash
+BLOCK_ID=block-01-b1-50g-r100000
+RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-$(printf '%02d' "${REPETITION}")"
+DRIVER_YAML="/root/denovo/nereus-campaign/${RUN_ID}-driver.yaml"
+
+./scripts/nereus-benchmark/render-run-config.sh \
+  "${STAGE}" \
+  "${BLOCK_ID}" \
+  "${RUN_ID}" \
+  "${REPETITION}" \
+  "${SEED}" \
+  "${DRIVER_YAML}"
+
+./scripts/nereus-benchmark/validate-run-config.sh "${DRIVER_YAML}"
+
+# 在这里执行 9.3，保存本轮 CPUSet evidence。
+
+taskset -c 12-15 \
+  ./scripts/nereus-benchmark/run-case.sh \
+  "${DRIVER_YAML}" \
+  workloads/nereus-v0.1.0/b1-backlog-50g.yaml \
+  "${OMB_WORKERS_FILE}"
+```
+
+如果 100k 超过共同可持续上限，必须先生成独立 workload 文件调整 rate，
+不能直接修改仓库中的模板。
+
+## 11. R1 Broker crash
+
+R1 使用约 60% common ceiling。apps 节点终端 1 启动
+`r1-broker-crash-template.yaml` 渲染后的 workload。预热完成并确认目标
+partition owner 后，在 apps 节点终端 2 执行。R1 的 `BLOCK_ID` 必须包含
+实际 rate，例如 `block-01-r1-r120000`；按 10.2 渲染唯一 driver/workload
+并在启动前执行 9.3。
+
+```bash
+OWNER_POD='nereus-broker-0'
+RESULT_DIR="/root/denovo/benchmark/results/${CAMPAIGN_ID}/${RUN_ID}"
+FAULT_EVENTS="${RESULT_DIR}/fault-events.jsonl"
+
+/root/denovo/benchmark/scripts/nereus-benchmark/inject-broker-crash.sh \
+  "${OWNER_POD}" \
+  pulsar \
+  "${FAULT_EVENTS}"
+```
+
+不得默认假设 `nereus-broker-0` 就是 owner；`OWNER_POD` 必须来自本轮
+topic lookup evidence。故障脚本和 OMB 结果都在 apps 节点，因此事件文件会
+直接进入本轮 `RESULT_DIR`。测试结束后执行：
+
+```bash
+./scripts/nereus-benchmark/analyze-run.py \
+  "${RESULT_DIR}/result.json" \
+  --fault-events "${RESULT_DIR}/fault-events.jsonl" |
+tee "${RESULT_DIR}/analysis.json"
+```
+
+然后按 9.5–9.6 回传全部结果并冷重置。
+
+## 12. 正式执行顺序
+
+推荐顺序：
+
+1. A–E 各运行一次 S1，验证部署、storage class、CPUSet 和 evidence；
+2. 对 C1 每个 candidate rate，依次运行 A–E，每次都冷重置；
+3. 取 A–E sustainable ceiling 的最小值作为 common ceiling；
+4. L1 分别运行 common ceiling 的 25%、50%、75%；
+5. 独立运行 B1；
+6. 独立运行 R1；
+7. M1 的 100 B、1 KiB、10 KiB 分别运行独立 rate sweep；
+8. 新 repetition 使用新的 block/seed，并按预定 Stage 顺序轮换。
+
+同一 block 内 A–E 使用完全相同的 seed、OMB image digest、两个 worker、
+CPU/memory、placement、compression 和 workload。任一条件改变都必须开始
+新的 campaign，不能把结果混入当前表格。
+
+## 13. 失败处理与冷启动边界
+
+如果部署后置门禁失败，本次 `RUN_DIR/run.env` 会保留，但不会提升为
+`results/deploy/latest.env`。显式检查失败运行：
 
 ```bash
 FAILED_RUN="$(
@@ -519,16 +1142,15 @@ NEREUS_RUN_ENV="${FAILED_RUN}/run.env" \
   ./scripts/verify-nereus-release.sh "${STAGE}"
 ```
 
-只有部署脚本全部通过后，才会更新 `latest.env`。不要为失败运行手工
-伪造 `latest.env`。
+不要手工伪造或覆盖 `latest.env`。
 
-## 11. 冷启动边界
+reset 脚本清理 16 个核心数据 PVC：Oxia 3、BookKeeper 12、
+SeaweedFS 1。VMSingle 和 Grafana 的监控持久化卷不在该集合中。如果正式
+定义要求每轮同时清空历史监控数据，必须先扩展 reset 脚本并验证安全擦除，
+不能只删除 PV 对象。
 
-当前 reset 脚本安全擦除的是 16 个核心数据 PVC：Oxia 3、
-BookKeeper 12、SeaweedFS 1。VMSingle 和 Grafana 的监控持久化卷不在
-该集合中。如果每一轮还必须清空历史监控数据，应先扩展 reset 脚本，
-把 `local-prometheus-1` 和 `local-grafana` 纳入有证据的安全擦除流程；
-不要用删除 PV 对象代替清空其本地目录。
+因为 namespace 固定为共享的 `pulsar`：
 
-因为 namespace 固定为共享的 `pulsar`，Stage E 后也不要执行
-`kubectl delete namespace pulsar`。
+- 不要执行 `kubectl delete namespace pulsar`；
+- 不要在每轮卸载 `pulsar/omb`；
+- 整个 campaign 结束后才执行 `helm uninstall omb -n pulsar`。
