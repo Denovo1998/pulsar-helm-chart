@@ -87,6 +87,11 @@ namespaces:
   - name: bookkeeper
     initialShardCount: {{ .Values.oxia.initialShardCount }}
     replicationFactor: {{ .Values.oxia.replicationFactor }}
+{{- range $namespace := .Values.oxia.extraNamespaces }}
+  - name: {{ required (printf "oxia.extraNamespaces[].name is required") $namespace.name | quote }}
+    initialShardCount: {{ default $.Values.oxia.initialShardCount $namespace.initialShardCount }}
+    replicationFactor: {{ default $.Values.oxia.replicationFactor $namespace.replicationFactor }}
+{{- end }}
 servers:
   {{- $servicename := printf "%s-%s-svc" (include "pulsar.fullname" .) .Values.oxia.component }}
   {{- $publicservicename := printf "%s-%s" (include "pulsar.fullname" .) .Values.oxia.component }}

@@ -1,0 +1,99 @@
+{{/*
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+*/}}
+{{- if .Values.nereus.enabled }}
+{{- $oxiaAddr := .Values.nereus.oxia.serviceAddress }}
+{{- if not $oxiaAddr }}
+{{- $oxiaAddr = printf "%s:%d" (include "pulsar.oxia.server.service" .) (int .Values.oxia.server.ports.public) }}
+{{- end }}
+{{- $objEndpoint := .Values.nereus.objectStore.endpoint }}
+{{- if not $objEndpoint }}
+{{- if .Values.nereus.objectStore.seaweedfs.enabled }}
+{{- $objEndpoint = printf "http://%s-%s:%d" (include "pulsar.fullname" .) .Values.nereus.objectStore.seaweedfs.component (int .Values.nereus.objectStore.seaweedfs.service.s3Port) }}
+{{- else }}
+{{- fail "nereus.objectStore.endpoint is required when SeaweedFS is disabled" }}
+{{- end }}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: "{{ template "pulsar.fullname" . }}-nereus-admin"
+  namespace: {{ template "pulsar.namespace" . }}
+  labels:
+    {{- include "pulsar.standardLabels" . | nindent 4 }}
+data:
+  admin.properties: |
+    cluster={{ .Values.clusterName }}
+    oxia.serviceAddress={{ $oxiaAddr }}
+    oxia.namespace={{ .Values.nereus.oxia.namespace }}
+    oxia.sessionTimeoutSeconds=30
+    oxia.maxPendingOperations=1024
+    objectStore.providerClassName={{ .Values.nereus.objectStore.providerClassName }}
+    objectStore.endpoint={{ $objEndpoint }}
+    objectStore.region={{ .Values.nereus.objectStore.region }}
+    objectStore.bucket={{ .Values.nereus.objectStore.bucket }}
+    objectStore.prefix={{ .Values.nereus.objectStore.prefix }}
+    objectStore.pathStyleAccess={{ .Values.nereus.objectStore.pathStyleAccess }}
+    objectStore.requestTimeoutSeconds={{ .Values.nereus.objectStore.requestTimeoutSeconds }}
+    objectStore.maxConnections={{ .Values.nereus.objectStore.maxConnections }}
+    objectStore.secretResolverClassName={{ .Values.nereus.secrets.resolverClassName }}
+    objectStore.accessKeySecretRef={{ .Values.nereus.secrets.accessKeyReference }}
+    objectStore.secretKeySecretRef={{ .Values.nereus.secrets.secretKeyReference }}
+    {{- if .Values.nereus.secrets.sessionTokenReference }}
+    objectStore.sessionTokenSecretRef={{ .Values.nereus.secrets.sessionTokenReference }}
+    {{- end }}
+    bookkeeper.enabled={{ .Values.nereus.bookkeeperWal.enabled }}
+    {{- if .Values.nereus.bookkeeperWal.enabled }}
+    bookkeeper.deploymentId={{ .Values.nereus.bookkeeperWal.deploymentId }}
+    bookkeeper.providerScopeSha256={{ .Values.nereus.bookkeeperWal.providerScopeSha256 }}
+    bookkeeper.ledgerIdPrefixBits={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits }}
+    bookkeeper.ledgerIdPrefixValue={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue }}
+    bookkeeper.reservationId={{ .Values.nereus.bookkeeperWal.ledgerIdNamespaceReservationId }}
+    bookkeeper.ensembleSize={{ .Values.nereus.bookkeeperWal.ensembleSize }}
+    bookkeeper.writeQuorumSize={{ .Values.nereus.bookkeeperWal.writeQuorumSize }}
+    bookkeeper.ackQuorumSize={{ .Values.nereus.bookkeeperWal.ackQuorumSize }}
+    bookkeeper.digestType={{ .Values.nereus.bookkeeperWal.digestType }}
+    bookkeeper.passwordSecretRef={{ .Values.nereus.secrets.bookKeeperPasswordReference }}
+    bookkeeper.passwordIdentityVersion={{ .Values.nereus.bookkeeperWal.passwordIdentityVersion }}
+    bookkeeper.maxEntriesPerLedger={{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger }}
+    bookkeeper.maxBytesPerLedger={{ .Values.nereus.bookkeeperWal.maxBytesPerLedger }}
+    bookkeeper.maxAppendRangesPerLedger={{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger }}
+    bookkeeper.protectionSlotsPerRange={{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange }}
+    bookkeeper.maxReaderLeasesPerLedger={{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger }}
+    bookkeeper.maxUncertainAllocations={{ .Values.nereus.bookkeeperWal.maxUncertainAllocations }}
+    bookkeeper.maxLedgerAgeSeconds={{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds }}
+    bookkeeper.maxWritesInFlight={{ .Values.nereus.bookkeeperWal.maxWritesInFlight }}
+    bookkeeper.maxReadsInFlight={{ .Values.nereus.bookkeeperWal.maxReadsInFlight }}
+    bookkeeper.maxReadBytesInFlight={{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight }}
+    bookkeeper.operationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds }}
+    bookkeeper.allocationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds }}
+    bookkeeper.sealTimeoutSeconds={{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds }}
+    bookkeeper.deleteTimeoutSeconds={{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds }}
+    bookkeeper.readerLeaseSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseSeconds }}
+    bookkeeper.readerLeaseRenewSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds }}
+    bookkeeper.retentionScanIntervalSeconds={{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds }}
+    bookkeeper.retentionScanPageSize={{ .Values.nereus.bookkeeperWal.retentionScanPageSize }}
+    bookkeeper.gc.enabled={{ .Values.nereus.bookkeeperWal.gc.enabled }}
+    bookkeeper.gc.dryRun={{ .Values.nereus.bookkeeperWal.gc.dryRun }}
+    bookkeeper.gc.maxConcurrentDeletes={{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes }}
+    bookkeeper.gc.maxClockSkewSeconds={{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds }}
+    bookkeeper.gc.drainGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds }}
+    bookkeeper.gc.lateCreateAuditGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds }}
+    operatorEvidenceSha256={{ .Values.nereus.admin.operatorEvidenceSha256 }}
+    {{- end }}
+{{- end }}

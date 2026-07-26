@@ -291,4 +291,81 @@ data:
   bookkeeperUseV2WireProtocol: "false"
   {{- end }}
 {{ toYaml .Values.broker.configData | indent 2 }}
+{{- if .Values.nereus.enabled }}
+  managedLedgerStorageClassName: {{ .Values.nereus.managedLedgerStorageClassName | quote }}
+  nereusEnabled: "true"
+  nereusRuntimeProviderClassName: {{ .Values.nereus.runtimeProviderClassName | quote }}
+  {{- $oxiaAddr := .Values.nereus.oxia.serviceAddress }}
+  {{- if not $oxiaAddr }}
+  {{- $oxiaAddr = printf "%s:%d" (include "pulsar.oxia.server.service" .) (int .Values.oxia.server.ports.public) }}
+  {{- end }}
+  nereusOxiaServiceAddress: {{ $oxiaAddr | quote }}
+  nereusOxiaNamespace: {{ .Values.nereus.oxia.namespace | quote }}
+  nereusObjectStoreProviderClassName: {{ .Values.nereus.objectStore.providerClassName | quote }}
+  {{- $objEndpoint := .Values.nereus.objectStore.endpoint }}
+  {{- if not $objEndpoint }}
+  {{- if .Values.nereus.objectStore.seaweedfs.enabled }}
+  {{- $objEndpoint = printf "http://%s-%s:%d" (include "pulsar.fullname" .) .Values.nereus.objectStore.seaweedfs.component (int .Values.nereus.objectStore.seaweedfs.service.s3Port) }}
+  {{- else }}
+  {{- fail "nereus.objectStore.endpoint is required when SeaweedFS is disabled" }}
+  {{- end }}
+  {{- end }}
+  nereusObjectStoreEndpoint: {{ $objEndpoint | quote }}
+  nereusObjectStoreRegion: {{ .Values.nereus.objectStore.region | quote }}
+  nereusObjectStoreBucket: {{ .Values.nereus.objectStore.bucket | quote }}
+  nereusObjectStorePrefix: {{ .Values.nereus.objectStore.prefix | quote }}
+  nereusObjectStorePathStyleAccess: {{ .Values.nereus.objectStore.pathStyleAccess | quote }}
+  nereusObjectStoreRequestTimeoutSeconds: {{ .Values.nereus.objectStore.requestTimeoutSeconds | quote }}
+  nereusObjectStoreMaxConnections: {{ .Values.nereus.objectStore.maxConnections | quote }}
+  nereusObjectStoreSecretResolverClassName: {{ .Values.nereus.secrets.resolverClassName | quote }}
+  nereusObjectStoreAccessKeySecretRef: {{ .Values.nereus.secrets.accessKeyReference | quote }}
+  nereusObjectStoreSecretKeySecretRef: {{ .Values.nereus.secrets.secretKeyReference | quote }}
+  nereusObjectStoreSessionTokenSecretRef: {{ .Values.nereus.secrets.sessionTokenReference | quote }}
+  nereusDefaultStorageProfile: {{ .Values.nereus.defaultStorageProfile | quote }}
+  nereusGenerationProtocolEnabled: {{ .Values.nereus.generationProtocol.enabled | quote }}
+  nereusMaterializationStagingDirectory: {{ .Values.nereus.staging.mountPath | quote }}
+  nereusPhysicalGcEnabled: {{ .Values.nereus.physicalGc.enabled | quote }}
+  nereusPhysicalGcDryRun: {{ .Values.nereus.physicalGc.dryRun | quote }}
+  {{- if .Values.nereus.bookkeeperWal.enabled }}
+  nereusBookKeeperPrimaryWalEnabled: "true"
+  nereusBookKeeperDeploymentId: {{ .Values.nereus.bookkeeperWal.deploymentId | quote }}
+  nereusBookKeeperProviderScopeSha256: {{ .Values.nereus.bookkeeperWal.providerScopeSha256 | quote }}
+  nereusBookKeeperLedgerIdPrefixBits: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits | quote }}
+  nereusBookKeeperLedgerIdPrefixValue: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue | quote }}
+  nereusBookKeeperLedgerIdNamespaceReservationId: {{ .Values.nereus.bookkeeperWal.ledgerIdNamespaceReservationId | quote }}
+  nereusBookKeeperEnsembleSize: {{ .Values.nereus.bookkeeperWal.ensembleSize | quote }}
+  nereusBookKeeperWriteQuorumSize: {{ .Values.nereus.bookkeeperWal.writeQuorumSize | quote }}
+  nereusBookKeeperAckQuorumSize: {{ .Values.nereus.bookkeeperWal.ackQuorumSize | quote }}
+  nereusBookKeeperDigestType: {{ .Values.nereus.bookkeeperWal.digestType | quote }}
+  nereusBookKeeperPasswordSecretRef: {{ .Values.nereus.secrets.bookKeeperPasswordReference | quote }}
+  nereusBookKeeperPasswordIdentityVersion: {{ .Values.nereus.bookkeeperWal.passwordIdentityVersion | quote }}
+  nereusBookKeeperMaxEntriesPerLedger: {{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger | quote }}
+  nereusBookKeeperMaxBytesPerLedger: {{ .Values.nereus.bookkeeperWal.maxBytesPerLedger | quote }}
+  nereusBookKeeperMaxAppendRangesPerLedger: {{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger | quote }}
+  nereusBookKeeperProtectionSlotsPerRange: {{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange | quote }}
+  nereusBookKeeperMaxReaderLeasesPerLedger: {{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger | quote }}
+  nereusBookKeeperMaxUncertainAllocations: {{ .Values.nereus.bookkeeperWal.maxUncertainAllocations | quote }}
+  nereusBookKeeperMaxLedgerAgeSeconds: {{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds | quote }}
+  nereusBookKeeperMaxWritesInFlight: {{ .Values.nereus.bookkeeperWal.maxWritesInFlight | quote }}
+  nereusBookKeeperMaxReadsInFlight: {{ .Values.nereus.bookkeeperWal.maxReadsInFlight | quote }}
+  nereusBookKeeperMaxReadBytesInFlight: {{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight | quote }}
+  nereusBookKeeperOperationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds | quote }}
+  nereusBookKeeperAllocationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds | quote }}
+  nereusBookKeeperSealTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds | quote }}
+  nereusBookKeeperDeleteTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds | quote }}
+  nereusBookKeeperReaderLeaseSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseSeconds | quote }}
+  nereusBookKeeperReaderLeaseRenewSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds | quote }}
+  nereusBookKeeperRetentionScanIntervalSeconds: {{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds | quote }}
+  nereusBookKeeperRetentionScanPageSize: {{ .Values.nereus.bookkeeperWal.retentionScanPageSize | quote }}
+  nereusBookKeeperMaxConcurrentDeletes: {{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes | quote }}
+  nereusBookKeeperMaxClockSkewSeconds: {{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds | quote }}
+  nereusBookKeeperGcDrainGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds | quote }}
+  nereusBookKeeperLateCreateAuditGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds | quote }}
+  nereusBookKeeperGcEnabled: {{ .Values.nereus.bookkeeperWal.gc.enabled | quote }}
+  nereusBookKeeperGcDryRun: {{ .Values.nereus.bookkeeperWal.gc.dryRun | quote }}
+  {{- end }}
+{{- with .Values.nereus.configData }}
+{{ toYaml . | indent 2 }}
+{{- end }}
+{{- end }}
 {{- end }}

@@ -1,0 +1,137 @@
+{{/*
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+*/}}
+{{- if .Values.nereus.objectStore.seaweedfs.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: "{{ template "pulsar.fullname" . }}-{{ .Values.nereus.objectStore.seaweedfs.component }}"
+  namespace: {{ template "pulsar.namespace" . }}
+  labels:
+    {{- include "pulsar.standardLabels" . | nindent 4 }}
+    component: {{ .Values.nereus.objectStore.seaweedfs.component }}
+spec:
+  serviceName: "{{ template "pulsar.fullname" . }}-{{ .Values.nereus.objectStore.seaweedfs.component }}-headless"
+  replicas: {{ .Values.nereus.objectStore.seaweedfs.replicaCount }}
+  podManagementPolicy: OrderedReady
+  selector:
+    matchLabels:
+      app: {{ template "pulsar.name" . }}
+      release: {{ .Release.Name }}
+      component: {{ .Values.nereus.objectStore.seaweedfs.component }}
+  template:
+    metadata:
+      labels:
+        app: {{ template "pulsar.name" . }}
+        release: {{ .Release.Name }}
+        component: {{ .Values.nereus.objectStore.seaweedfs.component }}
+    spec:
+      {{- if .Values.nereus.objectStore.seaweedfs.nodeSelector }}
+      nodeSelector:
+        {{- toYaml .Values.nereus.objectStore.seaweedfs.nodeSelector | nindent 8 }}
+      {{- end }}
+      {{- if .Values.nereus.objectStore.seaweedfs.tolerations }}
+      tolerations:
+        {{- toYaml .Values.nereus.objectStore.seaweedfs.tolerations | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nereus.objectStore.seaweedfs.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nereus.objectStore.seaweedfs.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: seaweedfs
+          image: "{{ .Values.nereus.objectStore.seaweedfs.image.repository }}:{{ .Values.nereus.objectStore.seaweedfs.image.tag }}"
+          imagePullPolicy: {{ .Values.nereus.objectStore.seaweedfs.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.nereus.objectStore.seaweedfs.command | nindent 12 }}
+          args:
+            {{- toYaml .Values.nereus.objectStore.seaweedfs.args | nindent 12 }}
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nereus.secrets.existingSecret | quote }}
+                  key: {{ .Values.nereus.secrets.accessKeyKey | quote }}
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nereus.secrets.existingSecret | quote }}
+                  key: {{ .Values.nereus.secrets.secretKeyKey | quote }}
+            {{- if .Values.nereus.secrets.sessionTokenKey }}
+            - name: AWS_SESSION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.nereus.secrets.existingSecret | quote }}
+                  key: {{ .Values.nereus.secrets.sessionTokenKey | quote }}
+            {{- end }}
+            - name: S3_BUCKET
+              value: {{ .Values.nereus.objectStore.bucket | quote }}
+          ports:
+            - name: s3
+              containerPort: {{ .Values.nereus.objectStore.seaweedfs.service.s3Port }}
+            - name: metrics
+              containerPort: {{ .Values.nereus.objectStore.seaweedfs.service.metricsPort }}
+          startupProbe:
+            tcpSocket:
+              port: s3
+            failureThreshold: {{ .Values.nereus.objectStore.seaweedfs.probes.startup.failureThreshold }}
+            periodSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.startup.periodSeconds }}
+            timeoutSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.startup.timeoutSeconds }}
+          readinessProbe:
+            tcpSocket:
+              port: s3
+            periodSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.readiness.periodSeconds }}
+            timeoutSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.readiness.timeoutSeconds }}
+          livenessProbe:
+            tcpSocket:
+              port: s3
+            periodSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.liveness.periodSeconds }}
+            timeoutSeconds: {{ .Values.nereus.objectStore.seaweedfs.probes.liveness.timeoutSeconds }}
+          resources:
+            {{- toYaml .Values.nereus.objectStore.seaweedfs.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      {{- if .Values.nereus.objectStore.seaweedfs.persistence.existingClaim }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.nereus.objectStore.seaweedfs.persistence.existingClaim }}
+      {{- end }}
+  {{- if not .Values.nereus.objectStore.seaweedfs.persistence.existingClaim }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          {{- toYaml .Values.nereus.objectStore.seaweedfs.persistence.accessModes | nindent 10 }}
+        storageClassName: {{ .Values.nereus.objectStore.seaweedfs.persistence.storageClassName | quote }}
+        resources:
+          requests:
+            storage: {{ .Values.nereus.objectStore.seaweedfs.persistence.size | quote }}
+        {{- with .Values.nereus.objectStore.seaweedfs.persistence.selector }}
+        selector:
+          {{- toYaml . | nindent 10 }}
+        {{- end }}
+  {{- end }}
+{{- end }}

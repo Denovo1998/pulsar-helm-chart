@@ -713,6 +713,7 @@ oxia:
   component: oxia
   initialShardCount: 3
   replicationFactor: 3
+  extraNamespaces: []
 ## templates/coordinator-deployment.yaml
   coordinator:
     # annotations for the app (statefulset/deployment)
@@ -1679,6 +1680,187 @@ broker:
     # region: <region>
     # gcsServiceAccountSecret: pulsar-gcp-sa-secret # pragma: allowlist secret
     # gcsServiceAccountJsonFile: google-service-account-key.json
+
+## Nereus
+nereus:
+  enabled: false
+  managedLedgerStorageClassName: "org.apache.pulsar.broker.storage.nereus.NereusManagedLedgerStorage"
+  runtimeProviderClassName: "com.nereusstream.pulsar.DefaultNereusRuntimeProvider"
+  defaultStorageProfile: BOOKKEEPER_WAL_ONLY
+  configData: {}
+  oxia:
+    serviceAddress: ""
+    namespace: nereus
+  secrets:
+    resolverClassName: "com.nereusstream.objectstore.EnvironmentObjectStoreSecretResolver"
+    existingSecret: ""
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+    sessionTokenKey: ""
+    bookKeeperPasswordKey: bookkeeper-password
+    accessKeyReference: NEREUS_S3_ACCESS_KEY
+    secretKeyReference: NEREUS_S3_SECRET_KEY
+    sessionTokenReference: ""
+    bookKeeperPasswordReference: NEREUS_BK_PASSWORD
+  objectStore:
+    providerClassName: "com.nereusstream.objectstore.S3CompatibleObjectStoreProvider"
+    endpoint: ""
+    region: us-east-1
+    bucket: nereus-benchmark
+    prefix: v0.1.0
+    pathStyleAccess: true
+    requestTimeoutSeconds: 30
+    maxConnections: 64
+    seaweedfs:
+      enabled: false
+      component: seaweedfs
+      image:
+        repository: nereus-benchmark/seaweedfs
+        tag: 4.29-amd64
+        pullPolicy: Never
+      replicaCount: 1
+      command:
+        - weed
+      args:
+        - mini
+        - -dir=/data
+        - -ip.bind=0.0.0.0
+        - -metricsPort=9327
+        - -metricsIp=0.0.0.0
+        - -webdav=false
+        - -admin.ui=false
+        - -s3.port.iceberg=0
+        - -master.telemetry=false
+        - -master.defaultReplication=000
+        - -master.volumeSizeLimitMB=1024
+        - -filer.maxMB=64
+        - -volume.index=memory
+      service:
+        type: ClusterIP
+        s3Port: 8333
+        metricsPort: 9327
+        annotations: {}
+      nodeSelector:
+        workload: app
+        nereus-object-store: "true"
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: app
+          effect: NoSchedule
+      affinity: {}
+      topologySpreadConstraints: []
+      resources:
+        requests:
+          cpu: "2"
+          memory: 4Gi
+        limits:
+          cpu: "2"
+          memory: 4Gi
+      persistence:
+        enabled: true
+        existingClaim: ""
+        storageClassName: local-seaweedfs
+        accessModes:
+          - ReadWriteOnce
+        size: 500Gi
+        selector: {}
+      probes:
+        startup:
+          failureThreshold: 90
+          periodSeconds: 2
+          timeoutSeconds: 1
+        readiness:
+          periodSeconds: 5
+          timeoutSeconds: 1
+        liveness:
+          periodSeconds: 10
+          timeoutSeconds: 1
+      podMonitor:
+        enabled: true
+        interval: 5s
+        scrapeTimeout: 4s
+  staging:
+    mountPath: /pulsar/data/nereus-staging
+    volume:
+      type: emptyDir
+      emptyDir:
+        medium: ""
+        sizeLimit: 20Gi
+      existingClaim: ""
+      hostPath: ""
+  generationProtocol:
+    enabled: true
+  physicalGc:
+    enabled: false
+    dryRun: true
+  bookkeeperWal:
+    enabled: false
+    deploymentId: ""
+    providerScopeSha256: ""
+    ledgerIdPrefixBits: 12
+    ledgerIdPrefixValue: 2049
+    ledgerIdNamespaceReservationId: ""
+    ensembleSize: 3
+    writeQuorumSize: 3
+    ackQuorumSize: 2
+    digestType: CRC32C
+    passwordIdentityVersion: v1
+    maxEntriesPerLedger: 100000
+    maxBytesPerLedger: 268435456
+    maxAppendRangesPerLedger: 1000
+    protectionSlotsPerRange: 8
+    maxReaderLeasesPerLedger: 64
+    maxUncertainAllocations: 32
+    maxLedgerAgeSeconds: 3600
+    maxWritesInFlight: 1
+    maxReadsInFlight: 64
+    maxReadBytesInFlight: 134217728
+    operationTimeoutSeconds: 30
+    allocationTimeoutSeconds: 20
+    sealTimeoutSeconds: 30
+    deleteTimeoutSeconds: 30
+    readerLeaseSeconds: 120
+    readerLeaseRenewSeconds: 30
+    retentionScanIntervalSeconds: 60
+    retentionScanPageSize: 256
+    gc:
+      enabled: false
+      dryRun: true
+      maxConcurrentDeletes: 1
+      maxClockSkewSeconds: 5
+      drainGraceSeconds: 300
+      lateCreateAuditGraceSeconds: 604800
+  admin:
+    image:
+      repository: nereus-benchmark/nereus-admin
+      tag: ""
+      pullPolicy: Never
+    timeoutSeconds: 600
+    operatorEvidenceSha256: ""
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: "1"
+        memory: 1Gi
+  bootstrap:
+    enabled: false
+    activeDeadlineSeconds: 900
+    backoffLimit: 4
+    ttlSecondsAfterFinished: 3600
+  brokerWait:
+    objectStore: true
+    bookKeeperNamespace: true
+    timeoutSeconds: 600
 
 ## Pulsar: Functions Worker
 ## The Function Worker component runs embedded with the broker

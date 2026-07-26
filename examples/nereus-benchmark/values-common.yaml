@@ -1,0 +1,134 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Nereus v0.1.0 Benchmark - Common Values
+# Applied first for all A-E stages.
+
+namespace: pulsar
+clusterName: beijing-1
+initialize: true
+
+components:
+  zookeeper: false
+  oxia: true
+  bookkeeper: true
+  autorecovery: true
+  broker: true
+  proxy: false
+  toolset: true
+
+defaultPulsarImageRepository: nereus-benchmark/pulsar
+defaultPulsarImageTag: 5.0.0-m1-apache-p8dae0236-amd64
+defaultPullPolicy: Never
+
+images:
+  bookie:
+    repository: nereus-benchmark/pulsar
+    tag: 5.0.0-m1-apache-p8dae0236-amd64
+    pullPolicy: Never
+  autorecovery:
+    repository: nereus-benchmark/pulsar
+    tag: 5.0.0-m1-apache-p8dae0236-amd64
+    pullPolicy: Never
+  toolset:
+    repository: nereus-benchmark/pulsar
+    tag: 5.0.0-m1-apache-p8dae0236-amd64
+    pullPolicy: Never
+
+oxia:
+  initialShardCount: 3
+  replicationFactor: 3
+  extraNamespaces:
+    - name: nereus
+      initialShardCount: 3
+      replicationFactor: 3
+  coordinator:
+    podMonitor:
+      enabled: true
+      interval: 5s
+      scrapeTimeout: 4s
+  server:
+    replicas: 3
+    podMonitor:
+      enabled: true
+      interval: 5s
+      scrapeTimeout: 4s
+
+bookkeeper:
+  replicaCount: 4
+  podMonitor:
+    enabled: true
+    interval: 5s
+    scrapeTimeout: 4s
+
+broker:
+  replicaCount: 3
+  podMonitor:
+    enabled: true
+    interval: 5s
+    scrapeTimeout: 4s
+  configData:
+    loadManagerClassName: "org.apache.pulsar.broker.loadbalance.extensions.ExtensibleLoadManagerImpl"
+    managedLedgerDefaultEnsembleSize: "3"
+    managedLedgerDefaultWriteQuorum: "3"
+    managedLedgerDefaultAckQuorum: "2"
+
+nereus:
+  secrets:
+    existingSecret: pulsar-nereus-secrets
+  objectStore:
+    region: us-east-1
+    bucket: nereus-benchmark
+    prefix: v0.1.0
+    pathStyleAccess: true
+    seaweedfs:
+      enabled: true
+      image:
+        repository: nereus-benchmark/seaweedfs
+        tag: 4.29-amd64
+        pullPolicy: Never
+      nodeSelector:
+        workload: app
+        nereus-object-store: "true"
+      persistence:
+        enabled: true
+        storageClassName: local-seaweedfs
+        size: 500Gi
+  generationProtocol:
+    enabled: true
+  physicalGc:
+    enabled: false
+    dryRun: true
+  bookkeeperWal:
+    enabled: true
+    deploymentId: nereus-v010-benchmark
+    providerScopeSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    ledgerIdPrefixBits: 12
+    ledgerIdPrefixValue: 2049
+    ledgerIdNamespaceReservationId: "00000000-0000-0000-0000-000000000000"
+    ensembleSize: 3
+    writeQuorumSize: 3
+    ackQuorumSize: 2
+    gc:
+      enabled: false
+      dryRun: true
+  admin:
+    image:
+      repository: nereus-benchmark/nereus-admin
+      tag: v0.1.0-n00000000-amd64
+      pullPolicy: Never
+    operatorEvidenceSha256: "0000000000000000000000000000000000000000000000000000000000000000"

@@ -1,0 +1,86 @@
+{{/*
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+*/}}
+{{- if and .Values.nereus.enabled .Values.nereus.bootstrap.enabled .Values.nereus.bookkeeperWal.enabled }}
+{{- $bootstrapIdentity := printf "%s\n%s" (include (print $.Template.BasePath "/nereus-admin-configmap.yaml") .) (toJson .Values.nereus) }}
+{{- $bootstrapRevision := $bootstrapIdentity | sha256sum | trunc 8 }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: "{{ template "pulsar.fullname" . }}-nereus-bk-bootstrap-{{ $bootstrapRevision }}"
+  namespace: {{ template "pulsar.namespace" . }}
+  labels:
+    {{- include "pulsar.standardLabels" . | nindent 4 }}
+    component: nereus-bk-bootstrap
+    benchmark.nereusstream.com/bootstrap-revision: {{ $bootstrapRevision | quote }}
+spec:
+  activeDeadlineSeconds: {{ .Values.nereus.bootstrap.activeDeadlineSeconds }}
+  backoffLimit: {{ .Values.nereus.bootstrap.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.nereus.bootstrap.ttlSecondsAfterFinished }}
+  template:
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.nereus.admin.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nereus.admin.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-oxia
+          image: "{{ .Values.nereus.admin.image.repository }}:{{ .Values.nereus.admin.image.tag }}"
+          imagePullPolicy: {{ .Values.nereus.admin.image.pullPolicy }}
+          command:
+            - sh
+            - -ec
+          args:
+            - |
+              deadline=$(($(date +%s) + {{ .Values.nereus.brokerWait.timeoutSeconds }}))
+              until getent hosts {{ template "pulsar.oxia.server.service" . }} >/dev/null 2>&1; do
+                test "$(date +%s)" -lt "$deadline"
+                sleep 2
+              done
+      containers:
+        - name: bootstrap
+          image: "{{ .Values.nereus.admin.image.repository }}:{{ .Values.nereus.admin.image.tag }}"
+          imagePullPolicy: {{ .Values.nereus.admin.image.pullPolicy }}
+          command:
+            - /opt/nereus-admin/bin/nereus-admin
+          args:
+            - bookkeeper
+            - namespace
+            - ensure
+            - --config
+            - /etc/nereus-admin/admin.properties
+            - --timeout-seconds
+            - "{{ .Values.nereus.admin.timeoutSeconds }}"
+            - --output
+            - /dev/termination-log
+          resources:
+            {{- toYaml .Values.nereus.admin.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nereus-admin
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: "{{ template "pulsar.fullname" . }}-nereus-admin"
+{{- end }}
