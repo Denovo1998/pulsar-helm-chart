@@ -36,6 +36,142 @@ under the License.
 `helm install`。`reset-nereus-benchmark-stage.sh --execute` 内部执行
 `helm uninstall`。不要提前手工 uninstall 或删除 PV。
 
+## 0. 执行边界和开始测试前的硬门禁
+
+不要在两个节点之间交替尝试同一条命令。固定执行边界如下：
+
+| 工作 | 执行节点 |
+| --- | --- |
+| Pulsar/Nereus、OMB 镜像构建 | `denovo-r730-1` |
+| Helm install/uninstall、Stage verify、evidence collect、冷重置 | `denovo-r730-1` |
+| OMB worker/空闲 driver Pod | Kubernetes 调度到 `denovo-win-1` |
+| SeaweedFS Pod | Kubernetes 调度到 `denovo-win-1` |
+| `run-case.sh`、宿主机 OMB coordinator、结果分析 | `denovo-win-1` |
+
+每次代码更新后，先更新两个节点的 benchmark checkout，再在主节点重新构建
+OMB 镜像。源码 SHA、镜像构建 `SOURCE_SHA` 和两个节点 checkout 必须一致。
+不能用新 checkout 运行旧镜像。
+
+正式执行 `run-case.sh` 前，下面六项必须同时成立：
+
+1. `pulsar/nereus` 和 `pulsar/omb` 都是 `deployed`；
+2. `omb-worker-0`、`omb-worker-1` 都在 `denovo-win-1` 且 Ready；
+3. apps 节点的 `omb-image.env` 非空并含三行
+   `IMAGE_REF/IMAGE_DIGEST/SOURCE_SHA`；
+4. apps 节点的 `omb-workers.yaml` 非空、恰好包含两个当前 Pod IP，且两个
+   `/counters-stats` 端点都返回 HTTP 200；
+5. apps 节点 kubelet 的 CPU Manager 是 `static`，系统保留 CPU 是
+   `12-15`；
+6. SeaweedFS 得到 4 个 `0-11` 范围内的逻辑 CPU，两个 worker 分别得到
+   2 个 `0-11` 范围内的逻辑 CPU，且每组都是完整 P-Core sibling pair。
+
+任一条件失败都不要启动 workload。本手册后面的命令会逐项断言这些条件。
+
+### 0.1 2026-07-26 现场检查结论
+
+本次远程只读检查发现：
+
+- Pulsar Stage A、OMB driver 和两个 worker 都处于 Running；
+- `omb-workers.yaml` 在两个节点都不存在；
+- apps 节点的 `omb-image.env` 是 0 字节；
+- 当前 OMB 镜像的 `SOURCE_SHA` 是 `7f89b90fc30d`，两个 checkout 已经是
+  `ad498ef657de7312e16fcda9429f025fdeaa576e`；
+- kubelet 的 `cpuManagerPolicy` 是 `none`，节点 allocatable CPU 仍是 16；
+- SeaweedFS、`omb-worker-0`、`omb-worker-1` 的
+  `Cpus_allowed_list` 都是 `0-15`；
+- 当前 SeaweedFS Pod 的 CPU request/limit 是 2，而本分支
+  `values-common.yaml` 已固定为 4。
+
+因此
+`results/v010-202607/block-01-s1-stage-A-rep-01/cpu-allocation.txt`
+只能作为失败前置检查证据，不能计入性能结果。正确恢复顺序是：
+
+1. 冷重置当前 Stage A 并卸载 OMB；
+2. 给 `denovo-win-1` 启用 static CPU Manager；
+3. 更新两台服务器代码；
+4. 在主节点从当前 benchmark SHA 重新构建和传输 OMB 镜像；
+5. 重新安装 OMB 和 Stage A；
+6. 在 apps 节点重新生成 worker 文件并通过全部硬门禁；
+7. 重新运行 S1。
+
+### 0.2 当前现场的恢复命令
+
+先在 `denovo-r730-1` 按第 1 节导出全部环境变量，然后清理尚未产生正式
+OMB 结果的 Stage A：
+
+```bash
+cd /root/pulsar-helm-chart
+
+./scripts/reset-nereus-benchmark-stage.sh A
+
+NEREUS_COLD_RESET_CONFIRM='pulsar/nereus/A' \
+  ./scripts/reset-nereus-benchmark-stage.sh A --execute
+
+helm uninstall omb -n pulsar
+kubectl -n pulsar wait \
+  --for=delete \
+  pod \
+  -l app=omb \
+  --timeout=5m
+kubectl -n pulsar get pods -l app=omb
+```
+
+预期最后一条命令不再返回 OMB Pod。然后维护 apps 节点：
+
+```bash
+kubectl drain denovo-win-1 \
+  --ignore-daemonsets \
+  --delete-emptydir-data
+```
+
+登录 `denovo-win-1`，备份并编辑 kubelet 的真实配置文件：
+
+```bash
+cp -a \
+  /var/lib/kubelet/config.yaml \
+  "/var/lib/kubelet/config.yaml.before-cpu-manager.$(date +%Y%m%dT%H%M%S)"
+
+vim /var/lib/kubelet/config.yaml
+```
+
+在 `KubeletConfiguration` 顶层加入且只加入一份：
+
+```yaml
+cpuManagerPolicy: static
+cpuManagerPolicyOptions:
+  full-pcpus-only: "true"
+reservedSystemCPUs: "12-15"
+```
+
+保存后执行：
+
+```bash
+systemctl stop kubelet
+rm -f /var/lib/kubelet/cpu_manager_state
+systemctl start kubelet
+
+systemctl is-active kubelet
+journalctl -u kubelet -n 100 --no-pager
+```
+
+回到 `denovo-r730-1`：
+
+```bash
+kubectl uncordon denovo-win-1
+kubectl wait \
+  --for=condition=Ready \
+  node/denovo-win-1 \
+  --timeout=5m
+
+kubectl get node denovo-win-1 \
+  -o jsonpath='{.status.capacity.cpu}{" capacity\n"}{.status.allocatable.cpu}{" allocatable\n"}'
+```
+
+预期为 `16 capacity`、`12 allocatable`。随后按第 8.1 节更新两个 benchmark
+checkout；按第 8.2 节重新构建、传输新 OMB 镜像；按第 8.4 节重新部署
+OMB；最后按第 9.1 节重新部署 Stage A。不要复用旧的
+`pulsar-b7f89b90fc30d-amd64` 镜像或旧 CPU evidence。
+
 ## 1. 每次登录控制节点时设置环境
 
 ```bash
@@ -421,7 +557,8 @@ test -r "${NEREUS_OPERATOR_EVIDENCE_FILE}"
 OMB release 固定为 `pulsar/omb`，在 A–E 之间保持运行。当前 Helm
 driver Pod 只写入 `example-run.sh` 后执行 `tail -f /dev/null`；正式
 coordinator 由 `denovo-win-1` 上的 `run-case.sh` 启动。镜像构建、
-`helm upgrade --install`、rollout 检查和 worker 地址生成都在主节点执行；
+`helm upgrade --install` 和 rollout 检查都在主节点执行；worker 地址文件
+在 apps 节点根据当前 Pod IP 生成；
 `nodeSelector: workload=apps` 使两个 worker Pod 和空闲 driver Pod 实际
 运行在 apps 节点。主节点只做控制面操作，不运行 OMB Pod。
 
@@ -502,8 +639,14 @@ grep -E '^(IMAGE_REF|IMAGE_DIGEST|SOURCE_SHA)=' \
   /root/denovo/nereus-campaign/omb-image-build.log \
   > /root/denovo/nereus-campaign/omb-image.env
 
-test "$(wc -l < /root/denovo/nereus-campaign/omb-image.env)" -eq 3
+test -s /root/denovo/nereus-campaign/omb-image.env
+test "$(
+  grep -Ec '^(IMAGE_REF|IMAGE_DIGEST|SOURCE_SHA)=' \
+    /root/denovo/nereus-campaign/omb-image.env
+)" -eq 3
 source /root/denovo/nereus-campaign/omb-image.env
+test "$(git -C /root/denovo/benchmark rev-parse --short=12 HEAD)" = \
+  "${SOURCE_SHA}"
 printf 'image=%s\ndigest=%s\nsource=%s\n' \
   "${IMAGE_REF}" "${IMAGE_DIGEST}" "${SOURCE_SHA}"
 ```
@@ -539,6 +682,9 @@ scp \
   /root/denovo/nereus-campaign/omb-image.env \
   /root/denovo/nereus-campaign/omb-image-build.log \
   root@denovo-win-1:/root/denovo/nereus-campaign/
+
+ssh root@denovo-win-1 \
+  'test -s /root/denovo/nereus-campaign/omb-image.env'
 ```
 
 在 apps 节点导入到 Kubernetes 使用的 `k8s.io` containerd namespace：
@@ -556,6 +702,10 @@ chmod +x containerd-transfer-omb-image.sh
 
 ```bash
 source /root/denovo/nereus-campaign/omb-image.env
+test "$(
+  grep -Ec '^(IMAGE_REF|IMAGE_DIGEST|SOURCE_SHA)=' \
+    /root/denovo/nereus-campaign/omb-image.env
+)" -eq 3
 test "$(git -C /root/denovo/benchmark rev-parse --short=12 HEAD)" = \
   "${SOURCE_SHA}"
 
@@ -563,6 +713,10 @@ nerdctl --namespace k8s.io images \
   --digests --no-trunc |
 grep 'nereus-benchmark/openmessaging-benchmark'
 ```
+
+如果 `omb-image.env` 是 0 字节，不要从 tar sidecar 猜测 `SOURCE_SHA`，
+也不要继续部署。回到主节点重新执行构建输出提取和 `scp`。tar sidecar 只
+包含镜像引用与 digest，不能替代三行的构建 identity 文件。
 
 ### 8.3 给 apps 节点准备 Kubernetes context
 
@@ -676,27 +830,69 @@ kubectl -n pulsar get pods \
 三个 Pod 都必须位于 `denovo-win-1`。生成固定 worker 文件：
 
 ```bash
-printf 'workers:\n' > "${OMB_WORKERS_FILE}"
 kubectl -n pulsar get pods \
   -l 'app=omb,component=worker' \
-  -o jsonpath='{range .items[*]}  - http://{.status.podIP}:8080{"\n"}{end}' \
-  >> "${OMB_WORKERS_FILE}"
-
-cat "${OMB_WORKERS_FILE}"
-test "$(grep -c '^  - http://' "${OMB_WORKERS_FILE}")" -eq 2
+  -o wide
 ```
 
-把最终 values 和 worker 地址文件同步到实际运行 coordinator 的 apps
-节点：
+worker 文件由实际运行 coordinator 的 apps 节点直接生成，不再在主节点
+生成后 `scp`。这样可以避免漏传文件，并确保记录的是运行前的当前 Pod IP。
+先在主节点同步只读的 OMB values 和构建 identity：
 
 ```bash
 scp \
   "${OMB_VALUES}" \
-  "${OMB_WORKERS_FILE}" \
+  "${OMB_IMAGE_ENV}" \
   root@denovo-win-1:/root/denovo/nereus-campaign/
 
 ssh root@denovo-win-1 \
-  "test \"\$(grep -c '^  - http://' '${OMB_WORKERS_FILE}')\" -eq 2"
+  'test -s /root/denovo/nereus-campaign/omb-image.env'
+```
+
+然后在 `denovo-win-1` 执行下面整个代码块。它只接受两个 Running、Ready
+worker，逐个检查真实的 `/counters-stats` 端点，最后才原子替换文件：
+
+```bash
+(
+  set -euo pipefail
+
+  OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
+  mapfile -t OMB_WORKER_URLS < <(
+    kubectl -n pulsar get pods \
+      -l 'app=omb,component=worker' \
+      -o json |
+    jq -r '
+      .items[]
+      | select(.status.phase == "Running")
+      | select(any(.status.conditions[]?;
+          .type == "Ready" and .status == "True"))
+      | [.metadata.name, .status.podIP]
+      | @tsv
+    ' |
+    sort |
+    awk '{print "http://" $2 ":8080"}'
+  )
+
+  test "${#OMB_WORKER_URLS[@]}" -eq 2
+  for worker in "${OMB_WORKER_URLS[@]}"; do
+    curl --fail --silent --show-error \
+      --max-time 5 \
+      "${worker}/counters-stats" \
+      >/dev/null
+  done
+
+  tmp_file="$(mktemp \
+    /root/denovo/nereus-campaign/omb-workers.yaml.XXXXXX)"
+  {
+    printf 'workers:\n'
+    printf '  - %s\n' "${OMB_WORKER_URLS[@]}"
+  } > "${tmp_file}"
+  chmod 600 "${tmp_file}"
+  mv "${tmp_file}" "${OMB_WORKERS_FILE}"
+
+  cat "${OMB_WORKERS_FILE}"
+  test "$(grep -c '^  - http://' "${OMB_WORKERS_FILE}")" -eq 2
+)
 ```
 
 ## 9. 单次冷启动测试闭环
@@ -773,11 +969,45 @@ export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
 export CAMPAIGN_ID='v010-202607'
 export HEAP_OPTS='-Xms2G -Xmx2G'
 
+test -s "${NEREUS_RUN_ENV}"
+test -s "${OMB_IMAGE_ENV}"
+test -s "${OMB_WORKERS_FILE}"
 source "${NEREUS_RUN_ENV}"
 source "${OMB_IMAGE_ENV}"
 
 OMB_FULL_GIT_SHA="$(git rev-parse HEAD)"
+test "${SOURCE_SHA}" = "$(git rev-parse --short=12 HEAD)"
 test "${OMB_FULL_GIT_SHA:0:${#SOURCE_SHA}}" = "${SOURCE_SHA}"
+
+mapfile -t OMB_WORKER_URLS < <(
+  sed -n 's/^[[:space:]]*- //p' "${OMB_WORKERS_FILE}" |
+  sort
+)
+test "${#OMB_WORKER_URLS[@]}" -eq 2
+
+mapfile -t OMB_LIVE_WORKER_URLS < <(
+  kubectl -n pulsar get pods \
+    -l 'app=omb,component=worker' \
+    -o json |
+  jq -r '
+    .items[]
+    | select(.status.phase == "Running")
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))
+    | "http://\(.status.podIP):8080"
+  ' |
+  sort
+)
+test "${#OMB_LIVE_WORKER_URLS[@]}" -eq 2
+test "$(printf '%s\n' "${OMB_WORKER_URLS[@]}")" = \
+  "$(printf '%s\n' "${OMB_LIVE_WORKER_URLS[@]}")"
+
+for worker in "${OMB_WORKER_URLS[@]}"; do
+  curl --fail --silent --show-error \
+    --max-time 5 \
+    "${worker}/counters-stats" \
+    >/dev/null
+done
 
 mapfile -t OMB_RUNTIME_IDS < <(
   kubectl -n pulsar get pods -l app=omb -o json |
@@ -812,6 +1042,9 @@ DRIVER_YAML="/root/denovo/nereus-campaign/${RUN_ID}-driver.yaml"
 ./scripts/nereus-benchmark/validate-run-config.sh "${DRIVER_YAML}"
 ```
 
+如果 worker 地址比较失败，说明 worker Pod 在文件生成后重建过。回到 8.4，
+在 apps 节点重新生成 `omb-workers.yaml`，不要手工修改旧 IP。
+
 同一 block 的 A–E 必须使用相同 `SEED`。下一 block 才能换 seed。
 正式 driver 必须由 `pulsar-stage-template.yaml` 渲染，不能直接使用
 `driver-pulsar/pulsar.yaml`。
@@ -821,6 +1054,61 @@ DRIVER_YAML="/root/denovo/nereus-campaign/${RUN_ID}-driver.yaml"
 在 apps 节点：
 
 ```bash
+test "$(jq -r '.policyName' /var/lib/kubelet/cpu_manager_state)" = \
+  'static'
+
+SEAWEEDFS_CPUSET="$(
+  kubectl -n pulsar exec nereus-seaweedfs-0 -- \
+    sh -c "awk '/Cpus_allowed_list/ {print \$2}' /proc/1/status"
+)"
+OMB_WORKER_0_CPUSET="$(
+  kubectl -n pulsar exec omb-worker-0 -- \
+    sh -c "awk '/Cpus_allowed_list/ {print \$2}' /proc/1/status"
+)"
+OMB_WORKER_1_CPUSET="$(
+  kubectl -n pulsar exec omb-worker-1 -- \
+    sh -c "awk '/Cpus_allowed_list/ {print \$2}' /proc/1/status"
+)"
+
+python3 - \
+  "${SEAWEEDFS_CPUSET}" \
+  "${OMB_WORKER_0_CPUSET}" \
+  "${OMB_WORKER_1_CPUSET}" <<'PY'
+import sys
+
+
+def expand(cpu_list):
+    cpus = set()
+    for item in cpu_list.split(","):
+        if "-" in item:
+            start, end = (int(value) for value in item.split("-", 1))
+            cpus.update(range(start, end + 1))
+        else:
+            cpus.add(int(item))
+    return cpus
+
+
+p_core_pairs = [{cpu, cpu + 1} for cpu in range(0, 12, 2)]
+seaweedfs, worker_0, worker_1 = map(expand, sys.argv[1:])
+
+
+def require_full_pairs(name, cpus, pair_count):
+    if len(cpus) != pair_count * 2:
+        raise SystemExit(
+            f"{name} requires {pair_count * 2} logical CPUs, got {sorted(cpus)}"
+        )
+    covered = set().union(*(pair for pair in p_core_pairs if pair <= cpus))
+    if covered != cpus:
+        raise SystemExit(f"{name} is not assigned complete P-Core pairs: {sorted(cpus)}")
+
+
+require_full_pairs("seaweedfs", seaweedfs, 2)
+require_full_pairs("omb-worker-0", worker_0, 1)
+require_full_pairs("omb-worker-1", worker_1, 1)
+if len(seaweedfs | worker_0 | worker_1) != 8:
+    raise SystemExit("SeaweedFS and OMB worker exclusive CPU sets overlap")
+PY
+
 RESULT_DIR="/root/denovo/benchmark/results/${CAMPAIGN_ID}/${RUN_ID}"
 mkdir -p "${RESULT_DIR}"
 
@@ -840,8 +1128,9 @@ mkdir -p "${RESULT_DIR}"
 } > "${RESULT_DIR}/cpu-allocation.txt"
 ```
 
-SeaweedFS 必须得到 `0-11` 中两个完整 sibling pair；两个 worker 必须各
-得到一个完整 sibling pair。三个结果都不能包含 E-Core `12-15`。
+上面的 Python 断言通过后才会写证据。SeaweedFS 必须得到 `0-11` 中两个
+完整 sibling pair；两个 worker 必须各得到一个完整 sibling pair，三个
+exclusive CPU set 不能重叠，也不能包含 E-Core `12-15`。
 
 ### 9.4 执行一个 workload
 
