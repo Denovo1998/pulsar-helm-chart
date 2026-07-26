@@ -111,6 +111,70 @@ kubectl taint node denovo-r730-1 dedicated=pulsar:NoSchedule --overwrite
 kubectl taint node denovo-win-1 dedicated=apps:NoSchedule --overwrite
 ```
 
+### 2.1 固定 apps 节点的 P-Core 分配
+
+`denovo-win-1` 的 CPU 拓扑固定为：
+
+- P-Core：逻辑 CPU `0-11`，物理核 sibling 分别为 `0-1`、`2-3`、
+  `4-5`、`6-7`、`8-9`、`10-11`；
+- E-Core：逻辑 CPU `12-15`。
+
+SeaweedFS 固定 request/limit 为 4 CPU，在 kubelet static CPU Manager 和
+`full-pcpus-only` 下占用两个完整 P-Core。两个 OMB worker 各固定为 2 CPU，
+分别占用一个完整 P-Core。先完成当前冷重置并卸载 apps 节点上的 OMB release，
+然后在控制节点执行：
+
+```bash
+kubectl drain denovo-win-1 \
+  --ignore-daemonsets \
+  --delete-emptydir-data
+```
+
+在 `denovo-win-1` 确认 kubelet 的 `--config` 路径，备份配置，并在
+`KubeletConfiguration` 顶层设置：
+
+```yaml
+cpuManagerPolicy: static
+cpuManagerPolicyOptions:
+  full-pcpus-only: "true"
+reservedSystemCPUs: "12-15"
+```
+
+保留现有的 memory、`systemReserved` 和 `kubeReserved` 配置，不要创建重复
+字段。切换策略时必须停止 kubelet 并清理旧 checkpoint：
+
+```bash
+systemctl stop kubelet
+rm -f /var/lib/kubelet/cpu_manager_state
+systemctl start kubelet
+journalctl -u kubelet -n 100 --no-pager
+```
+
+回到控制节点：
+
+```bash
+kubectl uncordon denovo-win-1
+kubectl get node denovo-win-1 \
+  -o jsonpath='{.status.capacity.cpu}{" capacity\n"}{.status.allocatable.cpu}{" allocatable\n"}'
+```
+
+预期 CPU capacity 为 16，allocatable 为 12。重新部署后，在 apps 节点保存
+CPU Manager evidence：
+
+```bash
+jq . /var/lib/kubelet/cpu_manager_state
+kubectl -n pulsar exec nereus-seaweedfs-0 -- \
+  sh -c 'grep Cpus_allowed_list /proc/1/status'
+kubectl -n pulsar exec omb-worker-0 -- \
+  sh -c 'grep Cpus_allowed_list /proc/1/status'
+kubectl -n pulsar exec omb-worker-1 -- \
+  sh -c 'grep Cpus_allowed_list /proc/1/status'
+```
+
+SeaweedFS 的允许列表必须由 `0-11` 中的两个完整 sibling pair 组成，不能包含
+`12-15`。两个 worker 的允许列表必须各由 `0-11` 中的一个完整 sibling pair
+组成。
+
 ## 3. 准备 containerd 镜像
 
 三个 Pulsar/Nereus 镜像使用 `imagePullPolicy: Never`。在没有私有镜像

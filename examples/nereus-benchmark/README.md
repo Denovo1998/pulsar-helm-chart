@@ -235,7 +235,10 @@ node must match `workload=pulsar`, and exactly one different schedulable Ready
 node must match both `workload=apps` and `nereus-object-store=true`. Brokers,
 BookKeeper, AutoRecovery, Oxia, toolset, metadata/admin Jobs, and monitoring
 run on the Pulsar node. Only the SeaweedFS object-store StatefulSet runs on the
-apps node.
+apps node. The benchmark profile fixes SeaweedFS at 4 CPU and 4 GiB. On the
+current 6-P-Core/4-E-Core apps node, kubelet static CPU Manager must reserve the
+E-Core logical CPUs and enable `full-pcpus-only`, so the 4 CPU SeaweedFS
+Guaranteed Pod receives two complete P-Cores.
 
 If the nodes are tainted, use matching taints:
 

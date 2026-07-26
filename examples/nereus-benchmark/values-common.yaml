@@ -143,6 +143,16 @@ nereus:
       nodeSelector:
         workload: apps
         nereus-object-store: "true"
+      # denovo-win-1 reserves logical CPUs 12-15 (E-Cores) for the system.
+      # With static CPU Manager and full-pcpus-only, cpu=4 gives SeaweedFS
+      # two complete 2-thread P-Cores.
+      resources:
+        requests:
+          cpu: "4"
+          memory: 4Gi
+        limits:
+          cpu: "4"
+          memory: 4Gi
       persistence:
         enabled: true
         storageClassName: local-seaweedfs
