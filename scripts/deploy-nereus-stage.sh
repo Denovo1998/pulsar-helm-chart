@@ -32,6 +32,45 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command is unavailable: $1"
 }
 
+run_nerdctl() {
+  local -a global_args=(--namespace "${containerd_namespace}")
+  if [[ -n "${containerd_address}" ]]; then
+    global_args+=(--address "${containerd_address}")
+  fi
+  "${nerdctl_bin}" "${global_args[@]}" "$@"
+}
+
+resolve_runtime_config_id() {
+  local image="$1"
+  local expected_target_digest="$2"
+  local label="$3"
+  local native_inspect
+  local target_digest
+  local config_id
+
+  native_inspect="$(run_nerdctl image inspect --mode native "${image}")" \
+    || die "could not inspect the local ${label} OCI target: ${image}"
+  target_digest="$(
+    jq -er '
+      (if type == "array" then .[0] else . end)
+      | (.Target.digest // .Target.Digest
+          // .target.digest // .target.Digest)
+      | select(test("^sha256:[0-9a-f]{64}$"))
+    ' <<<"${native_inspect}"
+  )" || die "local ${label} image has no OCI target digest: ${image}"
+  [[ "${target_digest}" == "${expected_target_digest}" ]] \
+    || die "local ${label} OCI target digest ${target_digest} does not match frozen digest ${expected_target_digest}"
+
+  config_id="$(
+    run_nerdctl image inspect "${image}" \
+      | jq -er '
+          .[0].Id
+          | select(test("^sha256:[0-9a-f]{64}$"))
+        '
+  )" || die "local ${label} image has no runtime config ID: ${image}"
+  printf '%s\n' "${config_id}"
+}
+
 sha256_file() {
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$1" | awk '{print $1}'
@@ -112,6 +151,9 @@ secret_key_reference="${NEREUS_SECRET_KEY_REFERENCE:-NEREUS_S3_SECRET_KEY}"
 bookkeeper_password_reference="${NEREUS_BOOKKEEPER_PASSWORD_REFERENCE:-NEREUS_BK_PASSWORD}"
 session_token_key="${NEREUS_SESSION_TOKEN_KEY:-}"
 session_token_reference="${NEREUS_SESSION_TOKEN_REFERENCE:-}"
+containerd_namespace="${NEREUS_CONTAINERD_NAMESPACE:-k8s.io}"
+containerd_address="${NEREUS_CONTAINERD_ADDRESS:-}"
+nerdctl_bin="${NEREUS_NERDCTL_BIN:-nerdctl}"
 expected_context="${NEREUS_EXPECTED_CONTEXT:-}"
 [[ -n "${expected_context}" ]] \
   || die "NEREUS_EXPECTED_CONTEXT must name the exact Kubernetes context"
@@ -159,7 +201,7 @@ run_dir="${results_root}/deploy/${stage}/${run_stamp}"
 preflight_dir="${results_root}/preflight/${stage}/${run_stamp}"
 manifest="${preflight_dir}/manifest.yaml"
 
-for command_name in helm kubectl jq awk grep sed; do
+for command_name in helm kubectl jq awk grep sed "${nerdctl_bin}"; do
   require_command "${command_name}"
 done
 
@@ -184,6 +226,9 @@ reservation_id=""
 apache_image_id=""
 nereus_image_id=""
 nereus_admin_image_id=""
+apache_image_config_id=""
+nereus_image_config_id=""
+nereus_admin_image_config_id=""
 if [[ -n "${operator_evidence_file}" ]]; then
   operator_evidence_sha256="$(sha256_file "${operator_evidence_file}")"
 fi
@@ -229,6 +274,49 @@ if [[ -n "${operator_evidence_file}" ]]; then
       || die "operator evidence has an invalid image ID: ${image_id:-<empty>}"
   done
 fi
+
+apache_image_config_id="$(
+  resolve_runtime_config_id \
+    "${APACHE_IMAGE}" "${apache_image_id}" "Apache Pulsar"
+)"
+if [[ "${stage}" != "A" ]]; then
+  nereus_image_config_id="$(
+    resolve_runtime_config_id \
+      "${NEREUS_IMAGE}" "${nereus_image_id}" "Nereus Pulsar"
+  )"
+  nereus_admin_image_config_id="$(
+    resolve_runtime_config_id \
+      "${NEREUS_ADMIN_IMAGE}" "${nereus_admin_image_id}" "Nereus admin"
+  )"
+fi
+jq -n \
+  --arg apacheImage "${APACHE_IMAGE}" \
+  --arg apacheTargetDigest "${apache_image_id}" \
+  --arg apacheConfigId "${apache_image_config_id}" \
+  --arg nereusImage "${NEREUS_IMAGE}" \
+  --arg nereusTargetDigest "${nereus_image_id}" \
+  --arg nereusConfigId "${nereus_image_config_id}" \
+  --arg nereusAdminImage "${NEREUS_ADMIN_IMAGE}" \
+  --arg nereusAdminTargetDigest "${nereus_admin_image_id}" \
+  --arg nereusAdminConfigId "${nereus_admin_image_config_id}" '
+    {
+      apache: {
+        image: $apacheImage,
+        targetDigest: $apacheTargetDigest,
+        runtimeConfigId: $apacheConfigId
+      },
+      nereus: {
+        image: $nereusImage,
+        targetDigest: $nereusTargetDigest,
+        runtimeConfigId: $nereusConfigId
+      },
+      nereusAdmin: {
+        image: $nereusAdminImage,
+        targetDigest: $nereusAdminTargetDigest,
+        runtimeConfigId: $nereusAdminConfigId
+      }
+    }
+  ' > "${run_dir}/image-identity-map.json"
 
 helm_overrides=(
   --set-string "namespace=${namespace}"
@@ -514,11 +602,40 @@ if [[ "${stage}" == "A" || "${stage}" == "B" ]]; then
   pulsar_admin topics stats "${topic}" > "${run_dir}/smoke-topic-stats.json"
 fi
 
+{
+  printf 'STAGE=%q\n' "${stage}"
+  printf 'RELEASE=%q\n' "${release}"
+  printf 'KUBERNETES_NAMESPACE=%q\n' "${namespace}"
+  printf 'KUBERNETES_CONTEXT=%q\n' "${current_context}"
+  printf 'CLUSTER=%q\n' "${cluster}"
+  printf 'BENCHMARK_TENANT=%q\n' "${tenant}"
+  printf 'BENCHMARK_NAMESPACE=%q\n' "${benchmark_namespace}"
+  printf 'BENCHMARK_TOPIC=%q\n' "${topic}"
+  printf 'MANAGED_LEDGER_STORAGE_CLASS=%q\n' "${storage_class}"
+  printf 'CAMPAIGN_VALUES=%q\n' "${campaign_values}"
+  printf 'CAMPAIGN_VALUES_SHA256=%q\n' "${campaign_values_sha256}"
+  printf 'OPERATOR_EVIDENCE_FILE=%q\n' "${operator_evidence_file}"
+  printf 'OPERATOR_EVIDENCE_SHA256=%q\n' "${operator_evidence_sha256}"
+  printf 'OXIA_STORAGE_CLASS=%q\n' "${oxia_storage_class}"
+  printf 'OXIA_STORAGE_PROVISIONER=%q\n' "${oxia_storage_provisioner}"
+  printf 'OXIA_STORAGE_SIZE=%q\n' "47Gi"
+  printf 'APACHE_IMAGE_TARGET_DIGEST=%q\n' "${apache_image_id}"
+  printf 'APACHE_IMAGE_CONFIG_ID=%q\n' "${apache_image_config_id}"
+  printf 'NEREUS_IMAGE_TARGET_DIGEST=%q\n' "${nereus_image_id}"
+  printf 'NEREUS_IMAGE_CONFIG_ID=%q\n' "${nereus_image_config_id}"
+  printf 'NEREUS_ADMIN_IMAGE_TARGET_DIGEST=%q\n' "${nereus_admin_image_id}"
+  printf 'NEREUS_ADMIN_IMAGE_CONFIG_ID=%q\n' "${nereus_admin_image_config_id}"
+  printf 'RUN_DIR=%q\n' "${run_dir}"
+} > "${run_dir}/run.env"
+
 helm -n "${namespace}" get values "${release}" --all \
   > "${run_dir}/helm-values.yaml"
-kubectl -n "${namespace}" get pods -o wide > "${run_dir}/pods.txt"
-kubectl -n "${namespace}" get pods -o json > "${run_dir}/pods.json"
 kubectl -n "${namespace}" get pods \
+  -l "release=${release}" -o wide > "${run_dir}/pods.txt"
+kubectl -n "${namespace}" get pods \
+  -l "release=${release}" -o json > "${run_dir}/pods.json"
+kubectl -n "${namespace}" get pods \
+  -l "release=${release}" \
   -o custom-columns='NAME:.metadata.name,NODE:.spec.nodeName,IMAGE:.spec.containers[*].image,IMAGE_ID:.status.containerStatuses[*].imageID' \
   > "${run_dir}/images.txt"
 
@@ -547,17 +664,18 @@ capture_image_ids() {
 
 verify_image_id() {
   local image="$1"
-  local expected_image_id="$2"
-  local evidence_name="$3"
-  local label="$4"
+  local expected_target_digest="$2"
+  local expected_config_id="$3"
+  local evidence_name="$4"
+  local label="$5"
   local evidence_file="${run_dir}/image-id-${evidence_name}.json"
   capture_image_ids "${image}" "${evidence_name}"
   if ! jq -e \
-      --arg expectedImageId "${expected_image_id}" \
+      --arg expectedConfigId "${expected_config_id}" \
       '(length > 0
-        and all(.[]; (.imageID | endswith($expectedImageId))))' \
+        and all(.[]; (.imageID | endswith($expectedConfigId))))' \
       "${evidence_file}" >/dev/null; then
-    die "${label} Pods do not all use immutable image ID ${expected_image_id}"
+    die "${label} Pods do not all use runtime config ID ${expected_config_id} mapped from frozen OCI target ${expected_target_digest}; failed run: ${run_dir}/run.env"
   fi
 }
 
@@ -579,35 +697,18 @@ verify_consistent_image_id() {
 }
 
 verify_image_id \
-  "${APACHE_IMAGE}" "${apache_image_id}" "apache-pulsar" "Apache Pulsar"
+  "${APACHE_IMAGE}" "${apache_image_id}" "${apache_image_config_id}" \
+  "apache-pulsar" "Apache Pulsar"
 if [[ "${stage}" != "A" ]]; then
   verify_image_id \
-    "${NEREUS_IMAGE}" "${nereus_image_id}" "nereus-pulsar" "Nereus Pulsar"
+    "${NEREUS_IMAGE}" "${nereus_image_id}" "${nereus_image_config_id}" \
+    "nereus-pulsar" "Nereus Pulsar"
   verify_image_id \
     "${NEREUS_ADMIN_IMAGE}" "${nereus_admin_image_id}" \
-    "nereus-admin" "Nereus admin"
+    "${nereus_admin_image_config_id}" "nereus-admin" "Nereus admin"
 fi
 verify_consistent_image_id "oxia/oxia:0.16.7" "oxia" "Oxia" 4
 
-{
-  printf 'STAGE=%q\n' "${stage}"
-  printf 'RELEASE=%q\n' "${release}"
-  printf 'KUBERNETES_NAMESPACE=%q\n' "${namespace}"
-  printf 'KUBERNETES_CONTEXT=%q\n' "${current_context}"
-  printf 'CLUSTER=%q\n' "${cluster}"
-  printf 'BENCHMARK_TENANT=%q\n' "${tenant}"
-  printf 'BENCHMARK_NAMESPACE=%q\n' "${benchmark_namespace}"
-  printf 'BENCHMARK_TOPIC=%q\n' "${topic}"
-  printf 'MANAGED_LEDGER_STORAGE_CLASS=%q\n' "${storage_class}"
-  printf 'CAMPAIGN_VALUES=%q\n' "${campaign_values}"
-  printf 'CAMPAIGN_VALUES_SHA256=%q\n' "${campaign_values_sha256}"
-  printf 'OPERATOR_EVIDENCE_FILE=%q\n' "${operator_evidence_file}"
-  printf 'OPERATOR_EVIDENCE_SHA256=%q\n' "${operator_evidence_sha256}"
-  printf 'OXIA_STORAGE_CLASS=%q\n' "${oxia_storage_class}"
-  printf 'OXIA_STORAGE_PROVISIONER=%q\n' "${oxia_storage_provisioner}"
-  printf 'OXIA_STORAGE_SIZE=%q\n' "47Gi"
-  printf 'RUN_DIR=%q\n' "${run_dir}"
-} > "${run_dir}/run.env"
 cp "${run_dir}/run.env" "${results_root}/deploy/latest.env"
 
 echo "stage ${stage} infrastructure is ready"

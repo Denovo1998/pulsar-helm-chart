@@ -213,6 +213,14 @@ kubectl -n pulsar describe pod <SEAWEEDFS_POD>
 
 不要在镜像仍缺失时反复执行新的 Helm install。
 
+镜像构建 manifest 中的 `APACHE_IMAGE_ID`、`NEREUS_IMAGE_ID` 和
+`NEREUS_ADMIN_IMAGE_ID` 是 OCI manifest/target digest。containerd CRI
+向 Kubernetes Pod 状态报告的是 image config ID，两者都是 SHA-256，
+但数值不同。部署脚本会先通过 `nerdctl image inspect --mode native`
+证明本地 tag 的 OCI target 与冻结 manifest 一致，再把该 target 映射到
+Docker-compatible inspect 的 config ID，最后用 config ID 校验 Pod。
+不要直接拿 `nerdctl images` 的 DIGEST 列与 Pod `imageID` 比较。
+
 ## 4. 准备静态存储
 
 在控制节点应用现有 PV：
@@ -428,6 +436,23 @@ kubectl get pv \
 
 确认 `pulsar/nereus` release 和 16 个核心数据 PVC 均不存在，所需静态
 PV 都是 `Available`，再安装下一 Stage。
+
+如果部署在后置门禁失败，新版脚本仍会保留该次运行自己的
+`RUN_DIR/run.env`，但不会把它提升为 `results/deploy/latest.env`。先从
+错误信息或目录时间找到失败运行，然后显式检查：
+
+```bash
+FAILED_RUN="$(
+  ls -1dt "${NEREUS_RESULTS_ROOT}/deploy/${STAGE}"/* |
+  head -n 1
+)"
+
+NEREUS_RUN_ENV="${FAILED_RUN}/run.env" \
+  ./scripts/verify-nereus-release.sh "${STAGE}"
+```
+
+只有部署脚本全部通过后，才会更新 `latest.env`。不要为失败运行手工
+伪造 `latest.env`。
 
 ## 11. 冷启动边界
 
