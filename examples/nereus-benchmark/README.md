@@ -23,6 +23,11 @@ The authoritative design is
 `nereus-v0.1.0-helm-chart-code-level-design.md` at the repository root.
 The workflow uses containerd/nerdctl; Docker is not required.
 
+For the exact two-node server commands, use
+[`SERVER-RUNBOOK.md`](SERVER-RUNBOOK.md). It freezes the operational identity
+to Helm release `nereus`, Kubernetes namespace `pulsar`, and Pulsar cluster
+`beijing-1-benchmark`.
+
 ## Stage Descriptions
 
 | Stage | Broker/data path | Namespace storage class |
@@ -123,26 +128,31 @@ Record the same full Oxia image ID/digest on each eligible node. Deployment
 evidence captures all four running Oxia containers and fails if they do not
 resolve to one identical SHA-256 image identity.
 
-SeaweedFS is a separate third-party image. Resolve `chrislusf/seaweedfs:4.29`
-to a digest once, record that digest, tag it as
-`nereus-benchmark/seaweedfs:4.29-amd64`, and either push it to the same registry
-or import it on the node labeled `nereus-object-store=true`.
+SeaweedFS is a separate third-party image. It must exist in the `k8s.io`
+containerd namespace on the node labeled `nereus-object-store=true`; importing
+it only on the Pulsar node or into containerd's `default` namespace is
+insufficient. Resolve `chrislusf/seaweedfs:4.29` once, record its digest, tag it
+as `nereus-benchmark/seaweedfs:4.29-amd64`, and transfer that exact local image
+when the apps node cannot pull from the registry. `SERVER-RUNBOOK.md` contains
+both the direct-pull and offline-transfer commands.
 
 ## 2. Create one campaign identity
 
 Do not edit the tracked common or stage values for each server run. Generate a
 small untracked values layer from the checksummed image manifest instead.
-First choose an isolated release, Kubernetes namespace, and Pulsar cluster
-name. This example intentionally does not touch an existing
-`beijing-1` release in the `pulsar` namespace:
+First choose the short benchmark release, target Kubernetes namespace, and
+Pulsar cluster name. The old `beijing-1` release must not run concurrently
+with the benchmark because it would consume the same nodes and storage pool:
 
 ```bash
 kubectl config current-context
 
 export NEREUS_EXPECTED_CONTEXT='<EXACT_EXPECTED_CONTEXT>'
-export NEREUS_RELEASE='nereus-benchmark'
-export NEREUS_NAMESPACE='pulsar-benchmark'
+export NEREUS_RELEASE='nereus'
+export NEREUS_NAMESPACE='pulsar'
 export NEREUS_CLUSTER='beijing-1-benchmark'
+export NEREUS_SECRET_NAME='pulsar-nereus-secrets'
+export NEREUS_RESULTS_ROOT='/root/denovo/nereus-campaign/results'
 
 mkdir -p /root/denovo/nereus-campaign
 ./scripts/prepare-nereus-campaign-values.sh \
@@ -151,6 +161,8 @@ mkdir -p /root/denovo/nereus-campaign
 
 export NEREUS_CAMPAIGN_VALUES=\
 /root/denovo/nereus-campaign/values-campaign.yaml
+export NEREUS_OPERATOR_EVIDENCE_FILE=\
+/root/denovo/nereus-campaign/values-campaign.operator-evidence.txt
 ```
 
 The helper verifies the manifest sidecar, exact source SHAs, image names, and
@@ -238,16 +250,21 @@ Verify the labels before installing:
 kubectl get nodes -L workload,nereus-object-store -o wide
 ```
 
-Create the isolated namespace and runtime secret. Do not commit the populated
-Secret:
+Create the namespace and runtime Secret once before Stage A. Do not rotate it
+between stages and do not commit the populated Secret:
 
 ```bash
 kubectl create namespace "${NEREUS_NAMESPACE}" \
   --dry-run=client -o yaml | kubectl apply -f -
+SEAWEEDFS_ACCESS_KEY="nereus$(openssl rand -hex 8)"
+SEAWEEDFS_SECRET_KEY="$(openssl rand -hex 32)"
+NEREUS_BK_PASSWORD="$(openssl rand -hex 32)"
 kubectl -n "${NEREUS_NAMESPACE}" create secret generic pulsar-nereus-secrets \
-  --from-literal=access-key='<SEAWEEDFS_ACCESS_KEY>' \
-  --from-literal=secret-key='<SEAWEEDFS_SECRET_KEY>' \
-  --from-literal=bookkeeper-password='<NEREUS_BK_PASSWORD>'
+  --from-literal=access-key="${SEAWEEDFS_ACCESS_KEY}" \
+  --from-literal=secret-key="${SEAWEEDFS_SECRET_KEY}" \
+  --from-literal=bookkeeper-password="${NEREUS_BK_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+unset SEAWEEDFS_ACCESS_KEY SEAWEEDFS_SECRET_KEY NEREUS_BK_PASSWORD
 ```
 
 ## 4. Preflight the Chart
@@ -285,7 +302,7 @@ Stage A:
 ./scripts/reset-nereus-benchmark-stage.sh A
 
 # The plan prints this exact confirmation value.
-NEREUS_COLD_RESET_CONFIRM='pulsar-benchmark/nereus-benchmark/A' \
+NEREUS_COLD_RESET_CONFIRM='pulsar/nereus/A' \
   ./scripts/reset-nereus-benchmark-stage.sh A --execute
 ```
 
@@ -302,7 +319,7 @@ Stage B:
 ./scripts/verify-nereus-release.sh B
 ./scripts/collect-helm-evidence.sh
 ./scripts/reset-nereus-benchmark-stage.sh B
-NEREUS_COLD_RESET_CONFIRM='pulsar-benchmark/nereus-benchmark/B' \
+NEREUS_COLD_RESET_CONFIRM='pulsar/nereus/B' \
   ./scripts/reset-nereus-benchmark-stage.sh B --execute
 ```
 
@@ -343,7 +360,7 @@ kubectl get pv \
   -o custom-columns='NAME:.metadata.name,CLASS:.spec.storageClassName,PHASE:.status.phase,CAPACITY:.spec.capacity.storage'
 ```
 
-There must be no `nereus-benchmark` Helm release and no benchmark data PVC.
+There must be no `nereus` Helm release and no benchmark data PVC.
 All static PVs needed by Oxia, BookKeeper, and SeaweedFS must be `Available`.
 The next `deploy-nereus-stage.sh` invocation performs a new `helm install`,
 therefore Oxia metadata, BookKeeper ledgers/journals/indexes, SeaweedFS
@@ -361,9 +378,6 @@ the SeaweedFS PV manifest. Reset the monitoring PV too only when monitoring is
 part of the measured Helm release and its historical samples must not cross
 stage boundaries.
 
-After Stage E has been reset and its archive copied off the server, the
-isolated namespace can also be removed:
-
-```bash
-kubectl delete namespace "${NEREUS_NAMESPACE}"
-```
+The `pulsar` namespace is shared infrastructure in this campaign. Do not
+delete it after Stage E; the reset removes only the `nereus` release and its
+benchmark data.

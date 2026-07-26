@@ -96,7 +96,7 @@ case "${stage}" in
     ;;
 esac
 
-release="${NEREUS_RELEASE:-pulsar}"
+release="${NEREUS_RELEASE:-nereus}"
 namespace="${NEREUS_NAMESPACE:-pulsar}"
 cluster="${NEREUS_CLUSTER:-beijing-1}"
 wait_timeout="${NEREUS_WAIT_TIMEOUT:-20m}"

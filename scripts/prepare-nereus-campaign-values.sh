@@ -37,7 +37,7 @@ Required environment:
   NEREUS_EXPECTED_CONTEXT   Exact kubectl context for the campaign.
 
 Optional environment:
-  NEREUS_RELEASE            Helm release (default: pulsar).
+  NEREUS_RELEASE            Helm release (default: nereus).
   NEREUS_NAMESPACE          Kubernetes namespace (default: pulsar).
   NEREUS_CLUSTER            Pulsar cluster name (default: beijing-1).
   NEREUS_CLUSTER_DOMAIN     Kubernetes DNS domain (default: cluster.local).
@@ -111,7 +111,7 @@ fi
 output_values="$1"
 image_manifest="$2"
 expected_context="${NEREUS_EXPECTED_CONTEXT:-}"
-release="${NEREUS_RELEASE:-pulsar}"
+release="${NEREUS_RELEASE:-nereus}"
 namespace="${NEREUS_NAMESPACE:-pulsar}"
 cluster="${NEREUS_CLUSTER:-beijing-1}"
 cluster_domain="${NEREUS_CLUSTER_DOMAIN:-cluster.local}"
