@@ -306,6 +306,46 @@ kubectl get namespace "${namespace}" >/dev/null 2>&1 \
 if helm -n "${namespace}" status "${release}" >/dev/null 2>&1; then
   die "cold-start deployment requires no existing Helm release: ${namespace}/${release}; run reset-nereus-benchmark-stage.sh first"
 fi
+kubectl get nodes -l workload=pulsar -o json \
+  > "${run_dir}/pulsar-nodes-before.json"
+jq -e '
+  [.items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))]
+  | length == 1
+' "${run_dir}/pulsar-nodes-before.json" >/dev/null \
+  || die "benchmark requires exactly one schedulable Ready workload=pulsar node"
+kubectl get nodes -l 'workload=apps,nereus-object-store=true' -o json \
+  > "${run_dir}/object-store-nodes-before.json"
+jq -e '
+  [.items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))]
+  | length == 1
+' "${run_dir}/object-store-nodes-before.json" >/dev/null \
+  || die "benchmark requires exactly one schedulable Ready workload=apps,nereus-object-store=true node"
+pulsar_node="$(
+  jq -r '
+    .items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))
+    | .metadata.name
+  ' "${run_dir}/pulsar-nodes-before.json"
+)"
+object_store_node="$(
+  jq -r '
+    .items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))
+    | .metadata.name
+  ' "${run_dir}/object-store-nodes-before.json"
+)"
+[[ "${pulsar_node}" != "${object_store_node}" ]] \
+  || die "Pulsar and object-store workloads must use different nodes"
 kubectl get storageclass "${oxia_storage_class}" -o json \
   > "${run_dir}/oxia-storage-class.json" 2>/dev/null \
   || die "required Oxia StorageClass does not exist: ${oxia_storage_class}"

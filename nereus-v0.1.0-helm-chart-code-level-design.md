@@ -36,7 +36,7 @@ under the License.
 - **最终 Nereus Pulsar 计划镜像 tag（尚待构建并记录 digest）**：
   `nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64`
 - **对象存储**：SeaweedFS 4.29，单节点 `weed mini`
-- **对象存储调度节点**：`workload=app`
+- **对象存储调度节点**：`workload=apps`
 - **Pulsar/Oxia/BookKeeper 调度节点**：`workload=pulsar`
 
 > 本设计不提升 Nereus 的版本号。部署能力补丁直接提交到 `v0.1.0`
@@ -53,7 +53,7 @@ under the License.
 1. 保持一个 Helm Chart，通过 common values 和 A–E stage overlay 驱动五组实验。
 2. 不在 Chart 中嵌入 MinIO。
 3. 对象存储统一使用 **SeaweedFS 4.29 `weed mini`**。
-4. SeaweedFS 以单副本 StatefulSet 运行在 `workload=app` 节点。
+4. SeaweedFS 以单副本 StatefulSet 运行在 `workload=apps` 节点。
 5. SeaweedFS 数据写入专用 local PVC，不与 containerd、系统盘或 OMB 结果盘共用。
 6. SeaweedFS 在 A–E 五组中始终运行，避免改变集群拓扑。
 7. Pulsar control-plane、BookKeeper metadata 和 Nereus metadata 使用同一套 Oxia server，但分别位于：
@@ -299,7 +299,7 @@ RepoDigest（若有）
 
 # 4. 最终部署拓扑
 
-本设计假设 `workload=pulsar` 和 `workload=app` 节点属于同一个 Kubernetes
+本设计假设 `workload=pulsar` 和 `workload=apps` 节点属于同一个 Kubernetes
 集群。
 
 ```text
@@ -315,7 +315,7 @@ Kubernetes cluster
 |   +-- Pulsar/BookKeeper init Jobs
 |   +-- Nereus namespace bootstrap Job
 |
-+-- workload=app
++-- workload=apps
     |
     +-- SeaweedFS weed mini StatefulSet x 1
     +-- SeaweedFS local PVC
@@ -330,7 +330,7 @@ Producer
   -> BookKeeper WAL
   -> Oxia metadata CAS
   -> SeaweedFS S3 endpoint
-  -> workload=app local disk
+  -> workload=apps local disk
 ```
 
 SeaweedFS Service：
@@ -350,22 +350,29 @@ http://<pod>:9327/metrics
 Pulsar 节点：
 
 ```bash
-kubectl label node <PULSAR_NODE_1> workload=pulsar --overwrite
-kubectl label node <PULSAR_NODE_2> workload=pulsar --overwrite
+kubectl label node <PULSAR_NODE> workload=pulsar --overwrite
 ```
 
 App 节点：
 
 ```bash
-kubectl label node <APP_NODE> workload=app --overwrite
-kubectl label node <APP_NODE> nereus-object-store=true --overwrite
+kubectl label node <APPS_NODE> workload=apps --overwrite
+kubectl label node <APPS_NODE> nereus-object-store=true --overwrite
 ```
+
+正式 benchmark 要求恰好一个可调度且 Ready 的 `workload=pulsar` 主节点，以及
+恰好一个不同的、可调度且 Ready 的
+`workload=apps,nereus-object-store=true` 子节点。Broker、BookKeeper、
+AutoRecovery、Oxia、Toolset、Pulsar/BookKeeper init Job、Nereus admin Job
+和 VictoriaMetrics/Grafana 监控栈全部固定在主节点；只有 SeaweedFS
+StatefulSet 固定在子节点。部署 preflight 和部署后 gate 都必须拒绝标签数量或
+实际 Pod 落点不符合该拓扑的环境。
 
 可选 taint：
 
 ```bash
 kubectl taint node <PULSAR_NODE> dedicated=pulsar:NoSchedule
-kubectl taint node <APP_NODE> dedicated=app:NoSchedule
+kubectl taint node <APPS_NODE> dedicated=apps:NoSchedule
 ```
 
 ## 4.2 单节点对象存储的含义
@@ -512,7 +519,7 @@ spec:
                  - key: workload
                    operator: In
                    values:
-                      - app
+                      - apps
                  - key: nereus-object-store
                    operator: In
                    values:
@@ -1292,7 +1299,7 @@ apiVersion: v2
 name: pulsar
 description: Apache Pulsar Helm chart with optional Nereus benchmark integration
 type: application
-version: 4.7.0-nereus.2
+version: 4.7.0-nereus.3
 appVersion: "5.0.0-M1"
 ```
 
@@ -1399,13 +1406,13 @@ nereus:
             annotations: {}
 
          nodeSelector:
-            workload: app
+            workload: apps
             nereus-object-store: "true"
 
          tolerations:
             - key: dedicated
               operator: Equal
-              value: app
+              value: apps
               effect: NoSchedule
 
          affinity: {}
@@ -2007,13 +2014,13 @@ spec:
 
       spec:
          nodeSelector:
-            workload: app
+            workload: apps
             nereus-object-store: "true"
 
          tolerations:
             - key: dedicated
               operator: Equal
-              value: app
+              value: apps
               effect: NoSchedule
 
          terminationGracePeriodSeconds: 60
@@ -2496,7 +2503,7 @@ nereus:
             pullPolicy: Never
 
          nodeSelector:
-            workload: app
+            workload: apps
             nereus-object-store: "true"
 
          persistence:
@@ -2721,7 +2728,7 @@ Apache Broker image
 无 nereusEnabled
 无 Nereus bootstrap Job
 SeaweedFS StatefulSet存在
-SeaweedFS位于 workload=app
+SeaweedFS位于 workload=apps
 ```
 
 ## 25.3 B–E 断言
@@ -2880,7 +2887,7 @@ kubectl get pods -n pulsar -o wide
 
 ```text
 Broker/Bookie/Oxia -> workload=pulsar
-SeaweedFS -> workload=app
+SeaweedFS -> workload=apps
 ```
 
 ## 27.2 镜像
@@ -2930,7 +2937,7 @@ generation activation ACTIVE
 
 # 28. 对象存储与 OMB 共节点
 
-若 OMB 也运行在 `workload=app`：
+若 OMB 也运行在 `workload=apps`：
 
 必须：
 
@@ -3087,7 +3094,7 @@ ModularLoadManagerImpl与ExtensibleLoadManagerImpl正向render通过
 两个load manager的真实Oxia双Broker initialize/capability smoke通过
 非法配置 fail closed
 Oxia包含独立 nereus namespace
-SeaweedFS固定 workload=app
+SeaweedFS固定 workload=apps
 Pulsar组件固定 workload=pulsar
 SeaweedFS使用持久卷
 SeaweedFS 4.29 image identity已冻结
@@ -3151,7 +3158,7 @@ Nereus append/read/metadata/materialization 协议
 SeaweedFS 4.29
 weed mini
 single StatefulSet
-workload=app
+workload=apps
 S3 :8333
 Prometheus :9327
 local persistent volume

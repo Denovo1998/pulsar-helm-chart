@@ -21,7 +21,7 @@ apiVersion: v2
 appVersion: "5.0.0-M1"
 description: Apache Pulsar Helm chart with optional Nereus benchmark integration
 name: pulsar
-version: 4.7.0-nereus.2
+version: 4.7.0-nereus.3
 kubeVersion: ">=1.25.0-0"
 home: https://pulsar.apache.org
 sources:

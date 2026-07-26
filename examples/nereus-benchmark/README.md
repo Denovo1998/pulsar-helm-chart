@@ -214,8 +214,28 @@ Apply scheduling labels:
 
 ```bash
 kubectl label node <PULSAR_NODE> workload=pulsar --overwrite
-kubectl label node <APP_NODE> workload=app --overwrite
-kubectl label node <APP_NODE> nereus-object-store=true --overwrite
+kubectl label node <APPS_NODE> workload=apps --overwrite
+kubectl label node <APPS_NODE> nereus-object-store=true --overwrite
+```
+
+The benchmark topology is intentionally strict: exactly one schedulable Ready
+node must match `workload=pulsar`, and exactly one different schedulable Ready
+node must match both `workload=apps` and `nereus-object-store=true`. Brokers,
+BookKeeper, AutoRecovery, Oxia, toolset, metadata/admin Jobs, and monitoring
+run on the Pulsar node. Only the SeaweedFS object-store StatefulSet runs on the
+apps node.
+
+If the nodes are tainted, use matching taints:
+
+```bash
+kubectl taint node <PULSAR_NODE> dedicated=pulsar:NoSchedule --overwrite
+kubectl taint node <APPS_NODE> dedicated=apps:NoSchedule --overwrite
+```
+
+Verify the labels before installing:
+
+```bash
+kubectl get nodes -L workload,nereus-object-store -o wide
 ```
 
 Create the isolated namespace and runtime secret. Do not commit the populated

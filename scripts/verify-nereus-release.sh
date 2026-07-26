@@ -107,17 +107,43 @@ if jq -r '
   die "running workload still contains an unresolved image or identity placeholder"
 fi
 
+pulsar_node="$(kubectl get nodes -l workload=pulsar -o json | jq -er '
+  [.items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))
+    | .metadata.name]
+  | select(length == 1)
+  | .[0]
+')" || die "expected exactly one schedulable Ready workload=pulsar node"
+apps_node="$(kubectl get nodes \
+  -l 'workload=apps,nereus-object-store=true' -o json | jq -er '
+  [.items[]
+    | select(.spec.unschedulable != true)
+    | select(any(.status.conditions[]?;
+        .type == "Ready" and .status == "True"))
+    | .metadata.name]
+  | select(length == 1)
+  | .[0]
+')" || die "expected exactly one schedulable Ready workload=apps,nereus-object-store=true node"
+[[ "${pulsar_node}" != "${apps_node}" ]] \
+  || die "Pulsar and object-store workloads must use different nodes"
+
 while IFS=$'\t' read -r pod_name node_name component; do
   case "${component}" in
     seaweedfs)
+      [[ "${node_name}" == "${apps_node}" ]] \
+        || die "${pod_name} is not scheduled on object-store node ${apps_node}"
       [[ "$(kubectl get node "${node_name}" \
-          -o jsonpath='{.metadata.labels.workload}')" == "app" ]] \
-        || die "${pod_name} is not scheduled on workload=app"
+          -o jsonpath='{.metadata.labels.workload}')" == "apps" ]] \
+        || die "${pod_name} is not scheduled on workload=apps"
       [[ "$(kubectl get node "${node_name}" \
           -o jsonpath='{.metadata.labels.nereus-object-store}')" == "true" ]] \
         || die "${pod_name} is not scheduled on nereus-object-store=true"
       ;;
     broker|bookie|recovery|toolset|oxia*)
+      [[ "${node_name}" == "${pulsar_node}" ]] \
+        || die "${pod_name} is not scheduled on Pulsar node ${pulsar_node}"
       [[ "$(kubectl get node "${node_name}" \
           -o jsonpath='{.metadata.labels.workload}')" == "pulsar" ]] \
         || die "${pod_name} is not scheduled on workload=pulsar"
@@ -129,6 +155,37 @@ done < <(jq -r '
   | [.metadata.name, .spec.nodeName, (.metadata.labels.component // "")]
   | @tsv
 ' "${verification_dir}/pods.json")
+
+kubectl -n "${namespace}" get pods -o json \
+  > "${verification_dir}/namespace-pods.json"
+monitoring_pod_count="$(
+  jq \
+    --arg release "${release}" '
+      [.items[]
+        | select(.status.phase == "Running")
+        | select(
+            .metadata.labels["app.kubernetes.io/instance"] == $release
+            or (.metadata.name | startswith("vmagent-" + $release + "-"))
+            or (.metadata.name | startswith("vmsingle-" + $release + "-")))]
+      | length
+    ' "${verification_dir}/namespace-pods.json"
+)"
+(( monitoring_pod_count >= 4 )) \
+  || die "expected at least four running monitoring Pods for release ${release}"
+while IFS=$'\t' read -r pod_name node_name; do
+  [[ "${node_name}" == "${pulsar_node}" ]] \
+    || die "monitoring Pod ${pod_name} is not scheduled on Pulsar node ${pulsar_node}"
+done < <(jq -r \
+  --arg release "${release}" '
+    .items[]
+    | select(.status.phase == "Running")
+    | select(
+        .metadata.labels["app.kubernetes.io/instance"] == $release
+        or (.metadata.name | startswith("vmagent-" + $release + "-"))
+        or (.metadata.name | startswith("vmsingle-" + $release + "-")))
+    | [.metadata.name, .spec.nodeName]
+    | @tsv
+  ' "${verification_dir}/namespace-pods.json")
 
 toolset_pod="$(jq -er '
   .items[]

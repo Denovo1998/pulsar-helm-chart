@@ -52,6 +52,26 @@ expect_failure() {
     || die "negative render ${name} failed for the wrong reason; see ${output}"
 }
 
+expect_source_contains() {
+  local manifest="$1"
+  local source="$2"
+  local expected="$3"
+  local label="$4"
+  if ! awk -v marker="# Source: ${source}" '
+      $0 == marker {
+        capture = 1
+      }
+      capture {
+        print
+      }
+      capture && /^---$/ {
+        exit
+      }
+    ' "${manifest}" | grep -F "${expected}" >/dev/null; then
+    die "${label} did not render ${expected}"
+  fi
+}
+
 for overlay in "${repo_root}"/examples/nereus-benchmark/values-stage-*.yaml; do
   name="$(basename "${overlay}" .yaml)"
   helm lint "${chart}" \
@@ -70,6 +90,7 @@ stage_a_manifest="${temporary_dir}/values-stage-a-apache.yaml"
 stage_b_manifest="${temporary_dir}/values-stage-b-dormant.yaml"
 oxia_server_manifest="${temporary_dir}/oxia-server.yaml"
 oxia_coordinator_manifest="${temporary_dir}/oxia-coordinator.yaml"
+seaweedfs_manifest="${temporary_dir}/seaweedfs.yaml"
 awk '
   /^# Source: pulsar\/templates\/oxia-server-statefulset.yaml$/ {
     capture = 1
@@ -92,6 +113,17 @@ awk '
     exit
   }
 ' "${stage_a_manifest}" > "${oxia_coordinator_manifest}"
+awk '
+  /^# Source: pulsar\/templates\/nereus-seaweedfs-statefulset.yaml$/ {
+    capture = 1
+  }
+  capture {
+    print
+  }
+  capture && /^---$/ {
+    exit
+  }
+' "${stage_a_manifest}" > "${seaweedfs_manifest}"
 if grep -Eq 'pulsar-nereus-admin|nereusEnabled:' \
     "${stage_a_manifest}"; then
   die "stage A unexpectedly renders Nereus admin or Broker configuration"
@@ -100,6 +132,13 @@ grep -F 'component: seaweedfs' "${stage_a_manifest}" >/dev/null \
   || die "stage A did not render the common SeaweedFS topology"
 grep -F 'component: seaweedfs' "${stage_b_manifest}" >/dev/null \
   || die "stage B did not render SeaweedFS"
+grep -F 'workload: apps' "${seaweedfs_manifest}" >/dev/null \
+  || die "SeaweedFS is not pinned to workload=apps"
+grep -F 'nereus-object-store: "true"' "${seaweedfs_manifest}" >/dev/null \
+  || die "SeaweedFS is not pinned to the object-store node"
+if grep -Eq '^[[:space:]]*workload: app$' "${seaweedfs_manifest}"; then
+  die "SeaweedFS still renders the obsolete workload=app selector"
+fi
 grep -F 'pulsar-nereus-admin' "${stage_b_manifest}" >/dev/null \
   || die "stage B did not render the Nereus admin ConfigMap"
 grep -F -- '- /dev/termination-log' "${stage_b_manifest}" >/dev/null \
@@ -128,11 +167,36 @@ if grep -Eq \
     "${stage_a_manifest}"; then
   die "stage A unexpectedly rendered a ZooKeeper resource or metadata URL"
 fi
+for pulsar_source in \
+  pulsar/templates/oxia-coordinator-deployment.yaml \
+  pulsar/templates/oxia-server-statefulset.yaml \
+  pulsar/templates/bookkeeper-statefulset.yaml \
+  pulsar/templates/autorecovery-statefulset.yaml \
+  pulsar/templates/broker-statefulset.yaml \
+  pulsar/templates/toolset-statefulset.yaml \
+  pulsar/templates/bookkeeper-cluster-initialize.yaml \
+  pulsar/templates/pulsar-cluster-initialize.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/charts/grafana/templates/deployment.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/charts/kube-state-metrics/templates/deployment.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/charts/prometheus-node-exporter/templates/daemonset.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/charts/victoria-metrics-operator/templates/deployment.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/templates/victoria-metrics-operator/vmagent/vmagent.yaml \
+  pulsar/charts/victoria-metrics-k8s-stack/templates/victoria-metrics-operator/vmsingle/vmsingle.yml; do
+  expect_source_contains \
+    "${stage_a_manifest}" "${pulsar_source}" \
+    "workload: pulsar" "${pulsar_source}"
+done
+expect_source_contains \
+  "${stage_b_manifest}" \
+  pulsar/templates/nereus-bookkeeper-bootstrap-job.yaml \
+  "workload: pulsar" "Nereus BookKeeper bootstrap Job"
 grep -F 'storageClassName: local-zk' "${oxia_server_manifest}" >/dev/null \
   || die "Oxia did not reuse the local-zk storage class"
 grep -F 'storage: 47Gi' "${oxia_server_manifest}" >/dev/null \
   || die "Oxia storage size is not synchronized with ZooKeeper"
 for oxia_manifest in "${oxia_server_manifest}" "${oxia_coordinator_manifest}"; do
+  grep -F 'workload: pulsar' "${oxia_manifest}" >/dev/null \
+    || die "Oxia is not pinned to workload=pulsar"
   grep -F 'image: "oxia/oxia:0.16.7"' "${oxia_manifest}" >/dev/null \
     || die "Oxia did not render the frozen image tag"
   grep -F 'imagePullPolicy: "Never"' "${oxia_manifest}" >/dev/null \

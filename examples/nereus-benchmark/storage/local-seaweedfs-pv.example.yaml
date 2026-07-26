@@ -36,7 +36,7 @@ spec:
             - key: workload
               operator: In
               values:
-                - app
+                - apps
             - key: nereus-object-store
               operator: In
               values:

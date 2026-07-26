@@ -63,6 +63,8 @@ oxia:
       initialShardCount: 3
       replicationFactor: 3
   coordinator:
+    nodeSelector:
+      workload: pulsar
     resources:
       requests:
         memory: 2Gi
@@ -76,6 +78,8 @@ oxia:
       scrapeTimeout: 4s
   server:
     replicas: 3
+    nodeSelector:
+      workload: pulsar
     resources:
       requests:
         memory: 2Gi
@@ -93,13 +97,25 @@ oxia:
 
 bookkeeper:
   replicaCount: 4
+  nodeSelector:
+    workload: pulsar
   podMonitor:
     enabled: true
     interval: 5s
     scrapeTimeout: 4s
 
+autorecovery:
+  nodeSelector:
+    workload: pulsar
+
+pulsar_metadata:
+  nodeSelector:
+    workload: pulsar
+
 broker:
   replicaCount: 3
+  nodeSelector:
+    workload: pulsar
   podMonitor:
     enabled: true
     interval: 5s
@@ -125,7 +141,7 @@ nereus:
         tag: 4.29-amd64
         pullPolicy: Never
       nodeSelector:
-        workload: app
+        workload: apps
         nereus-object-store: "true"
       persistence:
         enabled: true
@@ -150,8 +166,61 @@ nereus:
       enabled: false
       dryRun: true
   admin:
+    nodeSelector:
+      workload: pulsar
     image:
       repository: nereus-benchmark/nereus-admin
       tag: v0.1.0-n78a15445-amd64
       pullPolicy: Never
     operatorEvidenceSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+
+toolset:
+  nodeSelector:
+    workload: pulsar
+
+victoria-metrics-k8s-stack:
+  victoria-metrics-operator:
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+  vmsingle:
+    spec:
+      nodeSelector:
+        workload: pulsar
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: pulsar
+          effect: NoSchedule
+  vmagent:
+    spec:
+      nodeSelector:
+        workload: pulsar
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: pulsar
+          effect: NoSchedule
+  grafana:
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+  prometheus-node-exporter:
+    nodeSelector:
+      workload: pulsar
+  kube-state-metrics:
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule

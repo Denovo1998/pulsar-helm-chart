@@ -1749,12 +1749,12 @@ nereus:
         metricsPort: 9327
         annotations: {}
       nodeSelector:
-        workload: app
+        workload: apps
         nereus-object-store: "true"
       tolerations:
         - key: dedicated
           operator: Equal
-          value: app
+          value: apps
           effect: NoSchedule
       affinity: {}
       topologySpreadConstraints: []
