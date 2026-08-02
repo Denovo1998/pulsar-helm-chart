@@ -180,7 +180,7 @@ nereus:
       workload: pulsar
     image:
       repository: nereus-benchmark/nereus-admin
-      tag: v0.1.0-n1c23bc9b-amd64
+      tag: v0.1.0-n20a9f8eb-amd64
       pullPolicy: Never
     operatorEvidenceSha256: "0000000000000000000000000000000000000000000000000000000000000000"
 

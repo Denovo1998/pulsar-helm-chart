@@ -43,10 +43,10 @@ under the License.
 
 本次执行固定的源码身份是：Apache Pulsar
 `8dae0236c0a0d405ed7f8303081080520fe91551`，Nereus Pulsar
-`50fc70fe4620febcf0fd31d97ff7d2be447af3d4`，Nereus v0.1.0
-`1c23bc9bc3c092efa75428a9c150433b365d297d`。镜像 tag 和 digest 以本次
-构建产生的 manifest 为准；不要复用旧的 `n78a15445` 或 OMB
-`7f89b90fc30d` 镜像。
+`0718b565f82e71a3ace2e28a3962c8c1385908c7`，Nereus v0.1.0
+`20a9f8ebdae222b12d589c863f871583f283da10`。镜像 tag 和 digest 以本次
+构建产生的 manifest 为准；不要复用旧的 `p50fc70fe`、`n1c23bc9b`、
+`n78a15445` 或 OMB `7f89b90fc30d` 镜像。
 
 ## 0. 执行边界和开始测试前的硬门禁
 

@@ -50,15 +50,15 @@ variable fixed; the Chart does not reject either implementation.
 ## Frozen Source Identities
 
 - Apache Pulsar: `8dae0236c0a0d405ed7f8303081080520fe91551`;
-- Nereus Pulsar: `50fc70fe4620febcf0fd31d97ff7d2be447af3d4`;
-- Nereus v0.1.0: `1c23bc9bc3c092efa75428a9c150433b365d297d`.
+- Nereus Pulsar: `0718b565f82e71a3ace2e28a3962c8c1385908c7`;
+- Nereus v0.1.0: `20a9f8ebdae222b12d589c863f871583f283da10`.
 
 The benchmark values are frozen to these three source-qualified local
 containerd tags:
 
 - `nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64`;
-- `nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n1c23bc9b-amd64`;
-- `nereus-benchmark/nereus-admin:v0.1.0-n1c23bc9b-amd64`.
+- `nereus-benchmark/pulsar:5.0.0-m1-nereus-p0718b565-n20a9f8eb-amd64`;
+- `nereus-benchmark/nereus-admin:v0.1.0-n20a9f8eb-amd64`.
 
 The tag is only a readable identity. The checksummed build manifest and the
 full image IDs recorded there remain the immutable source of truth. Import the
@@ -80,8 +80,8 @@ cd /root/denovo/nereus/nereus
 ./scripts/build-pulsar-5.0.0-M1-images.sh \
   --pulsar-repo /root/denovo/nereus/pulsar \
   --worktree-root /root/denovo/nereus/pulsar-worktrees \
-  --nereus-pulsar-ref 50fc70fe4620febcf0fd31d97ff7d2be447af3d4 \
-  --nereus-source-ref 1c23bc9bc3c092efa75428a9c150433b365d297d \
+  --nereus-pulsar-ref 0718b565f82e71a3ace2e28a3962c8c1385908c7 \
+  --nereus-source-ref 20a9f8ebdae222b12d589c863f871583f283da10 \
   --admin-base-image 'eclipse-temurin:21-jre-noble@sha256:<PINNED_DIGEST>'
 ```
 
