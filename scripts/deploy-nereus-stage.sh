@@ -452,6 +452,12 @@ if grep -Eq \
     "${manifest}"; then
   die "rendered Nereus admin or broker properties contain scientific notation for a Java long: ${manifest}"
 fi
+if [[ "${stage}" != "A" ]] \
+    && ! grep -F \
+      'PULSAR_PREFIX_nereusBookKeeperPrimaryWalEnabled: "true"' \
+      "${manifest}" >/dev/null; then
+  die "rendered broker ConfigMap does not expose the Nereus BookKeeper runtime flag: ${manifest}"
+fi
 grep -F \
   "metadataStoreUrl: \"oxia://${release}-oxia-svc:6648/broker\"" \
   "${manifest}" >/dev/null \

@@ -959,6 +959,9 @@ Stage B–E：
 long-valued BookKeeper properties 不得被渲染成科学计数法；如果该门禁失败，
 保留本地 rendered manifest，修复本地 chart 后 commit/push，再同步服务器仓库，
 不要直接编辑服务器上的 ConfigMap 或源码。
+Broker ConfigMap 中只存在于 Nereus 镜像的 BookKeeper fields 还必须使用
+`PULSAR_PREFIX_` 环境变量形式，否则容器 entrypoint 不会把它们加入
+`broker.conf`，运行时会退回 `nereusBookKeeperPrimaryWalEnabled=false`。
 
 对应关系：
 

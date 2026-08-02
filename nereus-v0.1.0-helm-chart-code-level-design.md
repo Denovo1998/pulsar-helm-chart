@@ -2190,6 +2190,11 @@ pipe every integral BookKeeper field through `int` before rendering decimal text
 and the local deployment preflight rejects scientific notation in the admin and
 broker forms of these long-valued properties before any Helm install.
 
+The BookKeeper-specific broker fields are emitted with the `PULSAR_PREFIX_`
+environment form. The Pulsar container entrypoint strips that prefix and adds
+custom keys that are absent from the stock `broker.conf`; emitting only the raw
+ConfigMap key would silently leave `nereusBookKeeperPrimaryWalEnabled=false`.
+
 ConfigMap checksum加入：
 
 ```text

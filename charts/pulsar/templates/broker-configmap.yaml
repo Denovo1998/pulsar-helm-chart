@@ -328,44 +328,44 @@ data:
   nereusPhysicalGcDryRun: {{ .Values.nereus.physicalGc.dryRun | quote }}
   {{- if .Values.nereus.bookkeeperWal.enabled }}
   # Helm can decode unquoted large YAML integers as float64. Render integral
-  # Nereus broker settings as decimal strings because the broker config parser
-  # maps these values to Java long/int fields.
-  nereusBookKeeperPrimaryWalEnabled: "true"
-  nereusBookKeeperDeploymentId: {{ .Values.nereus.bookkeeperWal.deploymentId | quote }}
-  nereusBookKeeperProviderScopeSha256: {{ .Values.nereus.bookkeeperWal.providerScopeSha256 | quote }}
-  nereusBookKeeperLedgerIdPrefixBits: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits | int | quote }}
-  nereusBookKeeperLedgerIdPrefixValue: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue | int | quote }}
-  nereusBookKeeperLedgerIdNamespaceReservationId: {{ .Values.nereus.bookkeeperWal.ledgerIdNamespaceReservationId | quote }}
-  nereusBookKeeperEnsembleSize: {{ .Values.nereus.bookkeeperWal.ensembleSize | int | quote }}
-  nereusBookKeeperWriteQuorumSize: {{ .Values.nereus.bookkeeperWal.writeQuorumSize | int | quote }}
-  nereusBookKeeperAckQuorumSize: {{ .Values.nereus.bookkeeperWal.ackQuorumSize | int | quote }}
-  nereusBookKeeperDigestType: {{ .Values.nereus.bookkeeperWal.digestType | quote }}
-  nereusBookKeeperPasswordSecretRef: {{ .Values.nereus.secrets.bookKeeperPasswordReference | quote }}
-  nereusBookKeeperPasswordIdentityVersion: {{ .Values.nereus.bookkeeperWal.passwordIdentityVersion | quote }}
-  nereusBookKeeperMaxEntriesPerLedger: {{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger | int | quote }}
-  nereusBookKeeperMaxBytesPerLedger: {{ .Values.nereus.bookkeeperWal.maxBytesPerLedger | int | quote }}
-  nereusBookKeeperMaxAppendRangesPerLedger: {{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger | int | quote }}
-  nereusBookKeeperProtectionSlotsPerRange: {{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange | int | quote }}
-  nereusBookKeeperMaxReaderLeasesPerLedger: {{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger | int | quote }}
-  nereusBookKeeperMaxUncertainAllocations: {{ .Values.nereus.bookkeeperWal.maxUncertainAllocations | int | quote }}
-  nereusBookKeeperMaxLedgerAgeSeconds: {{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds | int | quote }}
-  nereusBookKeeperMaxWritesInFlight: {{ .Values.nereus.bookkeeperWal.maxWritesInFlight | int | quote }}
-  nereusBookKeeperMaxReadsInFlight: {{ .Values.nereus.bookkeeperWal.maxReadsInFlight | int | quote }}
-  nereusBookKeeperMaxReadBytesInFlight: {{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight | int | quote }}
-  nereusBookKeeperOperationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds | int | quote }}
-  nereusBookKeeperAllocationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds | int | quote }}
-  nereusBookKeeperSealTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds | int | quote }}
-  nereusBookKeeperDeleteTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds | int | quote }}
-  nereusBookKeeperReaderLeaseSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseSeconds | int | quote }}
-  nereusBookKeeperReaderLeaseRenewSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds | int | quote }}
-  nereusBookKeeperRetentionScanIntervalSeconds: {{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds | int | quote }}
-  nereusBookKeeperRetentionScanPageSize: {{ .Values.nereus.bookkeeperWal.retentionScanPageSize | int | quote }}
-  nereusBookKeeperMaxConcurrentDeletes: {{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes | int | quote }}
-  nereusBookKeeperMaxClockSkewSeconds: {{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds | int | quote }}
-  nereusBookKeeperGcDrainGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds | int | quote }}
-  nereusBookKeeperLateCreateAuditGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds | int | quote }}
-  nereusBookKeeperGcEnabled: {{ .Values.nereus.bookkeeperWal.gc.enabled | quote }}
-  nereusBookKeeperGcDryRun: {{ .Values.nereus.bookkeeperWal.gc.dryRun | quote }}
+  # Nereus-only fields use PULSAR_PREFIX_ so the container entrypoint adds them
+  # even when the stock broker.conf does not list the custom keys.
+  PULSAR_PREFIX_nereusBookKeeperPrimaryWalEnabled: "true"
+  PULSAR_PREFIX_nereusBookKeeperDeploymentId: {{ .Values.nereus.bookkeeperWal.deploymentId | quote }}
+  PULSAR_PREFIX_nereusBookKeeperProviderScopeSha256: {{ .Values.nereus.bookkeeperWal.providerScopeSha256 | quote }}
+  PULSAR_PREFIX_nereusBookKeeperLedgerIdPrefixBits: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperLedgerIdPrefixValue: {{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperLedgerIdNamespaceReservationId: {{ .Values.nereus.bookkeeperWal.ledgerIdNamespaceReservationId | quote }}
+  PULSAR_PREFIX_nereusBookKeeperEnsembleSize: {{ .Values.nereus.bookkeeperWal.ensembleSize | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperWriteQuorumSize: {{ .Values.nereus.bookkeeperWal.writeQuorumSize | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperAckQuorumSize: {{ .Values.nereus.bookkeeperWal.ackQuorumSize | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperDigestType: {{ .Values.nereus.bookkeeperWal.digestType | quote }}
+  PULSAR_PREFIX_nereusBookKeeperPasswordSecretRef: {{ .Values.nereus.secrets.bookKeeperPasswordReference | quote }}
+  PULSAR_PREFIX_nereusBookKeeperPasswordIdentityVersion: {{ .Values.nereus.bookkeeperWal.passwordIdentityVersion | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxEntriesPerLedger: {{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxBytesPerLedger: {{ .Values.nereus.bookkeeperWal.maxBytesPerLedger | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxAppendRangesPerLedger: {{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperProtectionSlotsPerRange: {{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxReaderLeasesPerLedger: {{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxUncertainAllocations: {{ .Values.nereus.bookkeeperWal.maxUncertainAllocations | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxLedgerAgeSeconds: {{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxWritesInFlight: {{ .Values.nereus.bookkeeperWal.maxWritesInFlight | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxReadsInFlight: {{ .Values.nereus.bookkeeperWal.maxReadsInFlight | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxReadBytesInFlight: {{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperOperationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperAllocationTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperSealTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperDeleteTimeoutSeconds: {{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperReaderLeaseSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperReaderLeaseRenewSeconds: {{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperRetentionScanIntervalSeconds: {{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperRetentionScanPageSize: {{ .Values.nereus.bookkeeperWal.retentionScanPageSize | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxConcurrentDeletes: {{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperMaxClockSkewSeconds: {{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperGcDrainGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperLateCreateAuditGraceSeconds: {{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds | int | quote }}
+  PULSAR_PREFIX_nereusBookKeeperGcEnabled: {{ .Values.nereus.bookkeeperWal.gc.enabled | quote }}
+  PULSAR_PREFIX_nereusBookKeeperGcDryRun: {{ .Values.nereus.bookkeeperWal.gc.dryRun | quote }}
   {{- end }}
 {{- with .Values.nereus.configData }}
 {{ toYaml . | indent 2 }}
