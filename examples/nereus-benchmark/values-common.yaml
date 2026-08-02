@@ -223,6 +223,9 @@ victoria-metrics-k8s-stack:
         operator: Equal
         value: pulsar
         effect: NoSchedule
+    # The benchmark cluster is intentionally independent of public dashboard
+    # download endpoints. Metrics collection remains enabled.
+    dashboards: null
   prometheus-node-exporter:
     nodeSelector:
       workload: pulsar

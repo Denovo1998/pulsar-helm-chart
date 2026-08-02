@@ -114,6 +114,7 @@ reset_timeout_seconds="${NEREUS_RESET_TIMEOUT_SECONDS:-1200}"
 expected_confirmation="${namespace}/${release}/${stage}"
 reset_dir="${RUN_DIR}/cold-reset"
 map_file="${reset_dir}/pvc-pv-map.tsv"
+monitoring_map_file="${reset_dir}/monitoring-pv-map.tsv"
 pods_file="${reset_dir}/pods-before-uninstall.json"
 completion_file="${reset_dir}/completed.txt"
 mkdir -p "${reset_dir}"
@@ -168,6 +169,39 @@ if release_exists; then
   done
 elif [[ ! -r "${map_file}" ]]; then
   die "Helm release ${namespace}/${release} does not exist and no resumable reset map was found"
+fi
+
+if release_exists; then
+  printf 'pvc\tpv\tstorageClass\treclaimPolicy\tvolumeSource\n' \
+    > "${monitoring_map_file}"
+  grafana_pvc="${release}-grafana"
+  if kubectl -n "${namespace}" get "persistentvolumeclaim/${grafana_pvc}" \
+      >/dev/null 2>&1; then
+    grafana_pvc_json="$(kubectl -n "${namespace}" \
+      get "persistentvolumeclaim/${grafana_pvc}" -o json)"
+    grafana_pv="$(jq -er '.spec.volumeName | select(length > 0)' \
+      <<<"${grafana_pvc_json}")" \
+      || die "Grafana PVC is not bound to a PV: ${grafana_pvc}"
+    grafana_pv_json="$(kubectl get "persistentvolume/${grafana_pv}" -o json)"
+    grafana_storage_class="$(jq -r '.spec.storageClassName // ""' \
+      <<<"${grafana_pvc_json}")"
+    grafana_reclaim_policy="$(jq -er '.spec.persistentVolumeReclaimPolicy' \
+      <<<"${grafana_pv_json}")"
+    grafana_volume_source="$(jq -c '
+      if .spec.local then {type: "local", path: .spec.local.path}
+      elif .spec.hostPath then {type: "hostPath", path: .spec.hostPath.path}
+      elif .spec.csi then {type: "csi", driver: .spec.csi.driver}
+      else {type: "other"}
+      end
+    ' <<<"${grafana_pv_json}")"
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+      "${grafana_pvc}" "${grafana_pv}" "${grafana_storage_class}" \
+      "${grafana_reclaim_policy}" "${grafana_volume_source}" \
+      >> "${monitoring_map_file}"
+  fi
+elif [[ ! -r "${monitoring_map_file}" ]]; then
+  printf 'pvc\tpv\tstorageClass\treclaimPolicy\tvolumeSource\n' \
+    > "${monitoring_map_file}"
 fi
 
 echo "cold-reset target: ${expected_confirmation}"
@@ -278,6 +312,26 @@ EOF
   kubectl -n "${namespace}" delete "pod/${cleaner_name}" \
     --wait=true --timeout="${wait_timeout}" >/dev/null
 done < "${map_file}"
+
+while IFS=$'\t' read -r pvc pv storage_class reclaim_policy volume_source; do
+  [[ "${pvc}" != "pvc" ]] || continue
+  # Grafana is monitoring state, not benchmark data. Helm may remove its PVC
+  # on uninstall; unbind the static PV so the next install can claim it again.
+  if kubectl -n "${namespace}" get "persistentvolumeclaim/${pvc}" \
+      >/dev/null 2>&1; then
+    continue
+  fi
+  if ! kubectl get "persistentvolume/${pv}" >/dev/null 2>&1; then
+    continue
+  fi
+  claim_ref="$(kubectl get "persistentvolume/${pv}" \
+    -o jsonpath='{.spec.claimRef}' 2>/dev/null || true)"
+  if [[ -n "${claim_ref}" ]]; then
+    kubectl patch "persistentvolume/${pv}" --type=json \
+      -p='[{"op":"remove","path":"/spec/claimRef"}]' >/dev/null
+  fi
+  wait_for_pv_phase "${pv}" "Available"
+done < "${monitoring_map_file}"
 
 mapped_pvcs=()
 while IFS= read -r pvc; do

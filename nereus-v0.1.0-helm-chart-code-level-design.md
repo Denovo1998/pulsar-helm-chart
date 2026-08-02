@@ -2843,8 +2843,9 @@ ModularLoadManagerImpl”的 Helm 校验。
 1. 从本轮 `run.env` 绑定 stage、context、release 和 namespace；
 2. 要求 `collect-helm-evidence.sh` 已生成且校验通过的 archive/sidecar；
 3. 只接受显式的 `<namespace>/<release>/<stage>` 删除确认；
-4. 从运行中 release Pod 解析本轮恰好 16 个数据 PVC：
-   Oxia 3、BookKeeper journal/ledger/index 12、SeaweedFS 1；
+4. 从运行中 release Pod 解析本轮恰好 16 个核心数据 PVC：
+   Oxia 3、BookKeeper journal/ledger/index 12、SeaweedFS 1；如果存在
+   `${release}-grafana` 监控 PVC，单独记录其 PV 以便 Helm 卸载后解绑定；
 5. `helm uninstall --wait` 后，为每个 PVC 创建短生命周期 cleaner Pod，
    使用已导入的 frozen Apache image 挂载并清空文件系统；cleaner 必须容忍
    `dedicated=pulsar:NoSchedule`，以便挂载本地 BookKeeper PV 的节点能够调度；
@@ -2854,6 +2855,10 @@ ModularLoadManagerImpl”的 Helm 校验。
    `Delete` PV 因没有 deletion plugin，必须在 wipe 完成后删除 PV 对象，下一轮
    再从冻结 YAML apply；
 8. 保存 PVC/PV mapping、逐 PVC wipe log、完成记录及 SHA-256。
+
+Grafana PV 只解绑定、不由 benchmark reset 擦除；benchmark 的
+`values-common.yaml` 关闭远程 dashboard 下载，避免部署依赖公网 endpoint，
+但 VictoriaMetrics、vmagent 和 Grafana 指标采集仍然启用。
 
 namespace、手工创建的 Secret、campaign values 和本地 results/evidence 不由
 reset 脚本删除。下一 stage 复用同一 campaign identity，但物理存储内容必须

@@ -1251,6 +1251,10 @@ Kubernetes deletion plugin，脚本会在数据已擦除后删除 PV 对象；�
 - campaign identity 和已归档 evidence；
 - 长期运行的 `pulsar/omb` release。
 
+如果 Helm 卸载删除了 `${NEREUS_RELEASE}-grafana` PVC，reset 会只解绑定其静态
+PV、保留 Grafana 数据，不会把它计入 16 个核心 benchmark PVC。benchmark
+`values-common.yaml` 已关闭 Grafana 远程 dashboard 下载；指标采集不受影响。
+
 重置后检查：
 
 ```bash
