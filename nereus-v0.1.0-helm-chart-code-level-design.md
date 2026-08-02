@@ -2181,13 +2181,14 @@ data:
       operatorEvidenceSha256=<evidence>
 ```
 
-`admin.properties` is parsed by `nereus-admin` as typed Java properties. Helm may
-decode large unquoted YAML integers as floating-point values, which would render
-`maxBytesPerLedger` or `maxReadBytesInFlight` in scientific notation and fail
-the `long` parser. The ConfigMap template therefore pipes every integral
-BookKeeper field through `int` before rendering decimal text, and the local
-deployment preflight rejects scientific notation in these two long-valued
-properties before any Helm install.
+`admin.properties` is parsed by `nereus-admin` as typed Java properties, while the
+Broker ConfigMap is parsed by the Nereus broker adapter as typed runtime
+configuration. Helm may decode large unquoted YAML integers as floating-point
+values, which would render `maxBytesPerLedger` or `maxReadBytesInFlight` in
+scientific notation and fail a `long` parser. Both ConfigMap templates therefore
+pipe every integral BookKeeper field through `int` before rendering decimal text,
+and the local deployment preflight rejects scientific notation in the admin and
+broker forms of these long-valued properties before any Helm install.
 
 ConfigMap checksum加入：
 
