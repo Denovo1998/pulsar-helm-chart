@@ -1046,8 +1046,9 @@ export OMB_IMAGE_DIGEST="${IMAGE_DIGEST}"
 export OMB_RUNTIME_CONFIG_ID="${OMB_RUNTIME_IDS[0]}"
 
 export PULSAR_CLUSTER="${CLUSTER}"
-export PULSAR_SERVICE_URL="pulsar://$(kubectl -n pulsar get service nereus-broker -o jsonpath='{.spec.clusterIP}'):6650"
-export PULSAR_HTTP_URL="http://$(kubectl -n pulsar get service nereus-broker -o jsonpath='{.spec.clusterIP}'):8080"
+# Both broker Services are headless (clusterIP=None); use stable in-cluster DNS.
+export PULSAR_SERVICE_URL='pulsar://nereus-broker.pulsar.svc.cluster.local:6650'
+export PULSAR_HTTP_URL='http://nereus-broker.pulsar.svc.cluster.local:8080'
 
 BLOCK_ID=block-01-s1
 REPETITION=1
