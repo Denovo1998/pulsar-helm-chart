@@ -21,10 +21,6 @@ set -euo pipefail
 
 readonly APACHE_PULSAR_SHA="8dae0236c0a0d405ed7f8303081080520fe91551"
 readonly NEREUS_PULSAR_SHA="50fc70fe4620febcf0fd31d97ff7d2be447af3d4"
-readonly NEREUS_SHA="78a1544596af3c74ec1f3ce8b6194f015f6a2c9a"
-readonly APACHE_IMAGE="nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64"
-readonly NEREUS_IMAGE="nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64"
-readonly NEREUS_ADMIN_IMAGE="nereus-benchmark/nereus-admin:v0.1.0-n78a15445-amd64"
 
 usage() {
   cat <<'EOF'
@@ -160,10 +156,27 @@ actual_manifest_sha256="$(sha256_file "${image_manifest}")"
 verify_manifest_value "${image_manifest}" TARGET_PLATFORM linux/amd64
 verify_manifest_value "${image_manifest}" APACHE_PULSAR_SHA "${APACHE_PULSAR_SHA}"
 verify_manifest_value "${image_manifest}" NEREUS_PULSAR_SHA "${NEREUS_PULSAR_SHA}"
-verify_manifest_value "${image_manifest}" NEREUS_SHA "${NEREUS_SHA}"
-verify_manifest_value "${image_manifest}" APACHE_IMAGE "${APACHE_IMAGE}"
-verify_manifest_value "${image_manifest}" NEREUS_IMAGE "${NEREUS_IMAGE}"
-verify_manifest_value "${image_manifest}" NEREUS_ADMIN_IMAGE "${NEREUS_ADMIN_IMAGE}"
+nereus_sha="$(manifest_value "${image_manifest}" NEREUS_SHA)"
+apache_image="$(manifest_value "${image_manifest}" APACHE_IMAGE)"
+nereus_image="$(manifest_value "${image_manifest}" NEREUS_IMAGE)"
+nereus_admin_image="$(manifest_value "${image_manifest}" NEREUS_ADMIN_IMAGE)"
+[[ "${nereus_sha}" =~ ^[0-9a-f]{40}$ ]] \
+  || die "NEREUS_SHA is not a full Git SHA in ${image_manifest}"
+[[ "${apache_image}" =~ ^nereus-benchmark/pulsar:[^:]+$ ]] \
+  || die "APACHE_IMAGE is not a supported benchmark image reference: ${apache_image:-<empty>}"
+[[ "${nereus_image}" =~ ^nereus-benchmark/pulsar:[^:]+$ ]] \
+  || die "NEREUS_IMAGE is not a supported benchmark image reference: ${nereus_image:-<empty>}"
+[[ "${nereus_admin_image}" =~ ^nereus-benchmark/nereus-admin:[^:]+$ ]] \
+  || die "NEREUS_ADMIN_IMAGE is not a supported benchmark image reference: ${nereus_admin_image:-<empty>}"
+expected_apache_image="nereus-benchmark/pulsar:5.0.0-m1-apache-p${APACHE_PULSAR_SHA:0:8}-amd64"
+expected_nereus_image="nereus-benchmark/pulsar:5.0.0-m1-nereus-p${NEREUS_PULSAR_SHA:0:8}-n${nereus_sha:0:8}-amd64"
+expected_nereus_admin_image="nereus-benchmark/nereus-admin:v0.1.0-n${nereus_sha:0:8}-amd64"
+[[ "${apache_image}" == "${expected_apache_image}" ]] \
+  || die "APACHE_IMAGE does not match the frozen source-qualified tag: expected ${expected_apache_image}, got ${apache_image}"
+[[ "${nereus_image}" == "${expected_nereus_image}" ]] \
+  || die "NEREUS_IMAGE does not match the manifest source SHAs: expected ${expected_nereus_image}, got ${nereus_image}"
+[[ "${nereus_admin_image}" == "${expected_nereus_admin_image}" ]] \
+  || die "NEREUS_ADMIN_IMAGE does not match NEREUS_SHA: expected ${expected_nereus_admin_image}, got ${nereus_admin_image}"
 for image_id_key in APACHE_IMAGE_ID NEREUS_IMAGE_ID NEREUS_ADMIN_IMAGE_ID; do
   image_id="$(manifest_value "${image_manifest}" "${image_id_key}")"
   [[ "${image_id}" =~ ^sha256:[0-9a-f]{64}$ ]] \
@@ -243,11 +256,14 @@ temporary_values="${temporary_dir}/values.yaml"
   printf 'ledgerIdNamespaceReservationId=%s\n' "${reservation_id}"
   printf 'imageManifest=%s\n' "${image_manifest}"
   printf 'imageManifestSha256=%s\n' "${actual_manifest_sha256}"
-  printf 'apacheImage=%s\n' "${APACHE_IMAGE}"
+  printf 'apacheSourceSha=%s\n' "${APACHE_PULSAR_SHA}"
+  printf 'nereusPulsarSourceSha=%s\n' "${NEREUS_PULSAR_SHA}"
+  printf 'nereusSourceSha=%s\n' "${nereus_sha}"
+  printf 'apacheImage=%s\n' "${apache_image}"
   printf 'apacheImageId=%s\n' "$(manifest_value "${image_manifest}" APACHE_IMAGE_ID)"
-  printf 'nereusImage=%s\n' "${NEREUS_IMAGE}"
+  printf 'nereusImage=%s\n' "${nereus_image}"
   printf 'nereusImageId=%s\n' "$(manifest_value "${image_manifest}" NEREUS_IMAGE_ID)"
-  printf 'nereusAdminImage=%s\n' "${NEREUS_ADMIN_IMAGE}"
+  printf 'nereusAdminImage=%s\n' "${nereus_admin_image}"
   printf 'nereusAdminImageId=%s\n' "$(manifest_value "${image_manifest}" NEREUS_ADMIN_IMAGE_ID)"
 } > "${temporary_evidence}"
 operator_evidence_sha256="$(sha256_file "${temporary_evidence}")"

@@ -36,6 +36,18 @@ under the License.
 `helm install`。`reset-nereus-benchmark-stage.sh --execute` 内部执行
 `helm uninstall`。不要提前手工 uninstall 或删除 PV。
 
+服务器 checkout 只用于同步和执行，不用于编辑。任何脚本、Chart、workload
+或操作文档修改都必须先在本地 checkout 完成、测试、commit 并 push，再在
+服务器上执行 `git pull --ff-only` 同步；如果服务器工作区不是 clean，先停止
+本次流程并处理漂移，不要直接在服务器上改文件。
+
+本次执行固定的源码身份是：Apache Pulsar
+`8dae0236c0a0d405ed7f8303081080520fe91551`，Nereus Pulsar
+`50fc70fe4620febcf0fd31d97ff7d2be447af3d4`，Nereus v0.1.0
+`1c23bc9bc3c092efa75428a9c150433b365d297d`。镜像 tag 和 digest 以本次
+构建产生的 manifest 为准；不要复用旧的 `n78a15445` 或 OMB
+`7f89b90fc30d` 镜像。
+
 ## 0. 执行边界和开始测试前的硬门禁
 
 不要在两个节点之间交替尝试同一条命令。固定执行边界如下：
@@ -67,7 +79,10 @@ OMB 镜像。源码 SHA、镜像构建 `SOURCE_SHA` 和两个节点 checkout 必
 
 任一条件失败都不要启动 workload。本手册后面的命令会逐项断言这些条件。
 
-### 0.1 2026-07-26 现场检查结论
+### 0.1 历史现场检查结论（2026-07-26，仅用于解释恢复顺序）
+
+以下记录是上次现场的历史快照，不代表本次当前状态；其中出现的旧 OMB
+`SOURCE_SHA`、旧 checkout SHA 和旧 CPU evidence 均不可作为本次结果。
 
 本次远程只读检查发现：
 
@@ -82,9 +97,10 @@ OMB 镜像。源码 SHA、镜像构建 `SOURCE_SHA` 和两个节点 checkout 必
 - 当前 SeaweedFS Pod 的 CPU request/limit 是 2，而本分支
   `values-common.yaml` 已固定为 4。
 
-因此
+因此上次的
 `results/v010-202607/block-01-s1-stage-A-rep-01/cpu-allocation.txt`
-只能作为失败前置检查证据，不能计入性能结果。正确恢复顺序是：
+只能作为失败前置检查证据，不能计入性能结果。如果现场仍残留类似状态，
+正确恢复顺序是：
 
 1. 冷重置当前 Stage A 并卸载 OMB；
 2. 给 `denovo-win-1` 启用 static CPU Manager；
@@ -190,7 +206,7 @@ export OMB_REPO='/root/denovo/benchmark'
 export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
 export OMB_VALUES='/root/denovo/nereus-campaign/values-omb-apps.yaml'
 export OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
-export CAMPAIGN_ID='v010-202607'
+export CAMPAIGN_ID='v010-20260802'
 ```
 
 检查当前上下文和固定身份：
@@ -966,7 +982,7 @@ export NEREUS_RESULTS_ROOT='/root/denovo/nereus-campaign/results'
 export NEREUS_RUN_ENV="${NEREUS_RESULTS_ROOT}/deploy/latest.env"
 export OMB_WORKERS_FILE='/root/denovo/nereus-campaign/omb-workers.yaml'
 export OMB_IMAGE_ENV='/root/denovo/nereus-campaign/omb-image.env'
-export CAMPAIGN_ID='v010-202607'
+export CAMPAIGN_ID='v010-20260802'
 export HEAP_OPTS='-Xms2G -Xmx2G'
 
 test -s "${NEREUS_RUN_ENV}"

@@ -28,6 +28,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 chart="${repo_root}/charts/pulsar"
 common="${repo_root}/examples/nereus-benchmark/values-common.yaml"
+expected_apache_image="$(sed -n 's/^defaultPulsarImageTag: //p' "${common}")"
+expected_nereus_image="$(sed -n 's/^    tag: //p' "${repo_root}/examples/nereus-benchmark/values-stage-b-dormant.yaml")"
+expected_admin_image="$(sed -n 's/^      tag: //p' "${common}")"
+[[ -n "${expected_apache_image}" && -n "${expected_nereus_image}" \
+    && -n "${expected_admin_image}" ]] \
+  || die "benchmark image defaults are incomplete"
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/nereus-render.XXXXXX")"
 trap 'rm -rf "${temporary_dir}"' EXIT
 positive_identity_args=(
@@ -144,17 +150,17 @@ grep -F 'pulsar-nereus-admin' "${stage_b_manifest}" >/dev/null \
 grep -F -- '- /dev/termination-log' "${stage_b_manifest}" >/dev/null \
   || die "stage B bootstrap does not preserve termination evidence"
 grep -F \
-  'nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64' \
+  "${expected_apache_image}" \
   "${stage_a_manifest}" >/dev/null \
-  || die "stage A did not render the frozen Apache Pulsar image"
+  || die "stage A did not render the configured Apache Pulsar image"
 grep -F \
-  'nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64' \
+  "${expected_nereus_image}" \
   "${stage_b_manifest}" >/dev/null \
-  || die "stage B did not render the frozen Nereus Pulsar image"
+  || die "stage B did not render the configured Nereus Pulsar image"
 grep -F \
-  'nereus-benchmark/nereus-admin:v0.1.0-n78a15445-amd64' \
+  "${expected_admin_image}" \
   "${stage_b_manifest}" >/dev/null \
-  || die "stage B did not render the frozen Nereus admin image"
+  || die "stage B did not render the configured Nereus admin image"
 grep -F 'metadataStoreUrl: "oxia://pulsar-oxia-svc:6648/broker"' \
   "${stage_a_manifest}" >/dev/null \
   || die "the Pulsar metadata path is not using Oxia"

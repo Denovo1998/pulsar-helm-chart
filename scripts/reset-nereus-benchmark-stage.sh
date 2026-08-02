@@ -19,7 +19,6 @@
 
 set -euo pipefail
 
-readonly WIPE_IMAGE="nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64"
 readonly EXPECTED_DATA_PVC_COUNT=16
 
 die() {
@@ -104,6 +103,9 @@ namespace="${NEREUS_NAMESPACE:-${KUBERNETES_NAMESPACE}}"
   || die "release override does not match deployment run: ${release}"
 [[ "${namespace}" == "${KUBERNETES_NAMESPACE}" ]] \
   || die "namespace override does not match deployment run: ${namespace}"
+wipe_image="${APACHE_IMAGE:-}"
+[[ -n "${wipe_image}" ]] \
+  || die "deployment run does not record APACHE_IMAGE for the cold-wipe helper"
 
 wait_timeout="${NEREUS_RESET_TIMEOUT:-20m}"
 reset_timeout_seconds="${NEREUS_RESET_TIMEOUT_SECONDS:-1200}"
@@ -236,7 +238,7 @@ spec:
   terminationGracePeriodSeconds: 0
   containers:
     - name: wipe
-      image: ${WIPE_IMAGE}
+      image: ${wipe_image}
       imagePullPolicy: Never
       securityContext:
         runAsUser: 0

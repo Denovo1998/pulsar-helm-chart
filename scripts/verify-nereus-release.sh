@@ -36,6 +36,8 @@ run_env="${NEREUS_RUN_ENV:-${results_root}/deploy/latest.env}"
 
 # shellcheck disable=SC1090
 source "${run_env}"
+[[ -n "${APACHE_IMAGE:-}" && -n "${NEREUS_IMAGE:-}" && -n "${NEREUS_ADMIN_IMAGE:-}" ]] \
+  || die "deployment run does not record the manifest-qualified benchmark images"
 stage="${1:-${STAGE}}"
 [[ "${stage}" == "${STAGE}" ]] \
   || die "requested stage ${stage} does not match deployed stage ${STAGE}"
@@ -226,8 +228,8 @@ rendered_storage_class="$(jq -er \
   || die "Broker evidence annotation has storage class ${rendered_storage_class}, expected ${MANAGED_LEDGER_STORAGE_CLASS}"
 case "${stage}" in
   A)
-    [[ "${broker_image}" == *"apache-p8dae0236"* ]] \
-      || die "stage A is not running the immutable Apache baseline image"
+    [[ "${broker_image}" == "${APACHE_IMAGE}" ]] \
+      || die "stage A is not running the manifest-qualified Apache baseline image"
     if kubectl -n "${namespace}" get \
         "configmap/${release}-nereus-admin" >/dev/null 2>&1; then
       die "stage A unexpectedly rendered the Nereus admin ConfigMap"
@@ -236,8 +238,8 @@ case "${stage}" in
       "statefulset/${release}-seaweedfs" >/dev/null
     ;;
   B|C|D|E)
-    [[ "${broker_image}" == *"-nereus-p"*"-n"* ]] \
-      || die "stage ${stage} is not running a commit-qualified Nereus image"
+    [[ "${broker_image}" == "${NEREUS_IMAGE}" ]] \
+      || die "stage ${stage} is not running the manifest-qualified Nereus image"
     kubectl -n "${namespace}" get \
       "configmap/${release}-nereus-admin" >/dev/null
     kubectl -n "${namespace}" get \

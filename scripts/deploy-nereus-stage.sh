@@ -19,10 +19,6 @@
 
 set -euo pipefail
 
-readonly APACHE_IMAGE="nereus-benchmark/pulsar:5.0.0-m1-apache-p8dae0236-amd64"
-readonly NEREUS_IMAGE="nereus-benchmark/pulsar:5.0.0-m1-nereus-p50fc70fe-n78a15445-amd64"
-readonly NEREUS_ADMIN_IMAGE="nereus-benchmark/nereus-admin:v0.1.0-n78a15445-amd64"
-
 die() {
   echo "ERROR: $*" >&2
   exit 1
@@ -247,6 +243,12 @@ if [[ -n "${operator_evidence_file}" ]]; then
   operator_evidence_sha256="$(sha256_file "${operator_evidence_file}")"
 fi
 if [[ -n "${operator_evidence_file}" ]]; then
+  apache_image="$(evidence_value "${operator_evidence_file}" apacheImage)"
+  nereus_image="$(evidence_value "${operator_evidence_file}" nereusImage)"
+  nereus_admin_image="$(evidence_value "${operator_evidence_file}" nereusAdminImage)"
+  apache_source_sha="$(evidence_value "${operator_evidence_file}" apacheSourceSha)"
+  nereus_pulsar_source_sha="$(evidence_value "${operator_evidence_file}" nereusPulsarSourceSha)"
+  nereus_source_sha="$(evidence_value "${operator_evidence_file}" nereusSourceSha)"
   [[ "$(evidence_value "${operator_evidence_file}" schema)" \
       == "NEREUS_BENCHMARK_CAMPAIGN_V1" ]] \
     || die "unsupported operator evidence schema: ${operator_evidence_file}"
@@ -260,12 +262,12 @@ if [[ -n "${operator_evidence_file}" ]]; then
     || die "operator evidence Helm release does not match ${release}"
   [[ "$(evidence_value "${operator_evidence_file}" pulsarCluster)" == "${cluster}" ]] \
     || die "operator evidence Pulsar cluster does not match ${cluster}"
-  [[ "$(evidence_value "${operator_evidence_file}" apacheImage)" == "${APACHE_IMAGE}" ]] \
+  [[ "$(evidence_value "${operator_evidence_file}" apacheImage)" == "${apache_image}" ]] \
     || die "operator evidence does not identify the frozen Apache image"
-  [[ "$(evidence_value "${operator_evidence_file}" nereusImage)" == "${NEREUS_IMAGE}" ]] \
+  [[ "$(evidence_value "${operator_evidence_file}" nereusImage)" == "${nereus_image}" ]] \
     || die "operator evidence does not identify the frozen Nereus image"
   [[ "$(evidence_value "${operator_evidence_file}" nereusAdminImage)" \
-      == "${NEREUS_ADMIN_IMAGE}" ]] \
+      == "${nereus_admin_image}" ]] \
     || die "operator evidence does not identify the frozen Nereus admin image"
   provider_scope_sha256="$(
     evidence_value "${operator_evidence_file}" bookKeeperProviderScopeSha256
@@ -289,28 +291,45 @@ if [[ -n "${operator_evidence_file}" ]]; then
   done
 fi
 
+for image in "${apache_image}" "${nereus_image}" "${nereus_admin_image}"; do
+  [[ "${image}" == *:* && "${image}" != *@* ]] \
+    || die "operator evidence has an invalid image reference: ${image:-<empty>}"
+done
+for source_sha in \
+  "${apache_source_sha}" "${nereus_pulsar_source_sha}" "${nereus_source_sha}"; do
+  [[ "${source_sha}" =~ ^[0-9a-f]{40}$ ]] \
+    || die "operator evidence has an invalid source Git SHA: ${source_sha:-<empty>}"
+done
+
+apache_image_repository="${apache_image%:*}"
+apache_image_tag="${apache_image##*:}"
+nereus_image_repository="${nereus_image%:*}"
+nereus_image_tag="${nereus_image##*:}"
+nereus_admin_image_repository="${nereus_admin_image%:*}"
+nereus_admin_image_tag="${nereus_admin_image##*:}"
+
 apache_image_config_id="$(
   resolve_runtime_config_id \
-    "${APACHE_IMAGE}" "${apache_image_id}" "Apache Pulsar"
+    "${apache_image}" "${apache_image_id}" "Apache Pulsar"
 )"
 if [[ "${stage}" != "A" ]]; then
   nereus_image_config_id="$(
     resolve_runtime_config_id \
-      "${NEREUS_IMAGE}" "${nereus_image_id}" "Nereus Pulsar"
+      "${nereus_image}" "${nereus_image_id}" "Nereus Pulsar"
   )"
   nereus_admin_image_config_id="$(
     resolve_runtime_config_id \
-      "${NEREUS_ADMIN_IMAGE}" "${nereus_admin_image_id}" "Nereus admin"
+      "${nereus_admin_image}" "${nereus_admin_image_id}" "Nereus admin"
   )"
 fi
 jq -n \
-  --arg apacheImage "${APACHE_IMAGE}" \
+  --arg apacheImage "${apache_image}" \
   --arg apacheTargetDigest "${apache_image_id}" \
   --arg apacheConfigId "${apache_image_config_id}" \
-  --arg nereusImage "${NEREUS_IMAGE}" \
+  --arg nereusImage "${nereus_image}" \
   --arg nereusTargetDigest "${nereus_image_id}" \
   --arg nereusConfigId "${nereus_image_config_id}" \
-  --arg nereusAdminImage "${NEREUS_ADMIN_IMAGE}" \
+  --arg nereusAdminImage "${nereus_admin_image}" \
   --arg nereusAdminTargetDigest "${nereus_admin_image_id}" \
   --arg nereusAdminConfigId "${nereus_admin_image_config_id}" '
     {
@@ -345,7 +364,35 @@ helm_overrides=(
   --set-string "nereus.secrets.bookKeeperPasswordReference=${bookkeeper_password_reference}"
   --set-string "nereus.secrets.sessionTokenKey=${session_token_key}"
   --set-string "nereus.secrets.sessionTokenReference=${session_token_reference}"
+  --set-string "defaultPulsarImageRepository=${apache_image_repository}"
+  --set-string "defaultPulsarImageTag=${apache_image_tag}"
+  --set-string "defaultPullPolicy=Never"
+  --set-string "images.bookie.repository=${apache_image_repository}"
+  --set-string "images.bookie.tag=${apache_image_tag}"
+  --set-string "images.bookie.pullPolicy=Never"
+  --set-string "images.autorecovery.repository=${apache_image_repository}"
+  --set-string "images.autorecovery.tag=${apache_image_tag}"
+  --set-string "images.autorecovery.pullPolicy=Never"
+  --set-string "images.toolset.repository=${apache_image_repository}"
+  --set-string "images.toolset.tag=${apache_image_tag}"
+  --set-string "images.toolset.pullPolicy=Never"
+  --set-string "nereus.admin.image.repository=${nereus_admin_image_repository}"
+  --set-string "nereus.admin.image.tag=${nereus_admin_image_tag}"
+  --set-string "nereus.admin.image.pullPolicy=Never"
 )
+if [[ "${stage}" == "A" ]]; then
+  helm_overrides+=(
+    --set-string "images.broker.repository=${apache_image_repository}"
+    --set-string "images.broker.tag=${apache_image_tag}"
+    --set-string "images.broker.pullPolicy=Never"
+  )
+else
+  helm_overrides+=(
+    --set-string "images.broker.repository=${nereus_image_repository}"
+    --set-string "images.broker.tag=${nereus_image_tag}"
+    --set-string "images.broker.pullPolicy=Never"
+  )
+fi
 
 echo "linting stage ${stage}"
 helm lint "${chart}" \
@@ -630,6 +677,12 @@ fi
   printf 'CAMPAIGN_VALUES_SHA256=%q\n' "${campaign_values_sha256}"
   printf 'OPERATOR_EVIDENCE_FILE=%q\n' "${operator_evidence_file}"
   printf 'OPERATOR_EVIDENCE_SHA256=%q\n' "${operator_evidence_sha256}"
+  printf 'APACHE_IMAGE=%q\n' "${apache_image}"
+  printf 'NEREUS_IMAGE=%q\n' "${nereus_image}"
+  printf 'NEREUS_ADMIN_IMAGE=%q\n' "${nereus_admin_image}"
+  printf 'APACHE_SOURCE_SHA=%q\n' "${apache_source_sha}"
+  printf 'NEREUS_PULSAR_SOURCE_SHA=%q\n' "${nereus_pulsar_source_sha}"
+  printf 'NEREUS_SOURCE_SHA=%q\n' "${nereus_source_sha}"
   printf 'OXIA_STORAGE_CLASS=%q\n' "${oxia_storage_class}"
   printf 'OXIA_STORAGE_PROVISIONER=%q\n' "${oxia_storage_provisioner}"
   printf 'OXIA_STORAGE_SIZE=%q\n' "47Gi"
@@ -711,14 +764,14 @@ verify_consistent_image_id() {
 }
 
 verify_image_id \
-  "${APACHE_IMAGE}" "${apache_image_id}" "${apache_image_config_id}" \
+  "${apache_image}" "${apache_image_id}" "${apache_image_config_id}" \
   "apache-pulsar" "Apache Pulsar"
 if [[ "${stage}" != "A" ]]; then
   verify_image_id \
-    "${NEREUS_IMAGE}" "${nereus_image_id}" "${nereus_image_config_id}" \
+    "${nereus_image}" "${nereus_image_id}" "${nereus_image_config_id}" \
     "nereus-pulsar" "Nereus Pulsar"
   verify_image_id \
-    "${NEREUS_ADMIN_IMAGE}" "${nereus_admin_image_id}" \
+    "${nereus_admin_image}" "${nereus_admin_image_id}" \
     "${nereus_admin_image_config_id}" "nereus-admin" "Nereus admin"
 fi
 verify_consistent_image_id "oxia/oxia:0.16.7" "oxia" "Oxia" 4
