@@ -36,6 +36,10 @@ under the License.
 `helm install`。`reset-nereus-benchmark-stage.sh --execute` 内部执行
 `helm uninstall`。不要提前手工 uninstall 或删除 PV。
 
+`deploy-nereus-stage.sh` 会先以不创建 VictoriaMetrics CR 的 bootstrap 值安装
+operator 和 Pulsar 核心资源，等待 operator admission webhook Ready，再升级到
+完整监控值；不要把这两个 Helm 阶段拆成手工命令。
+
 服务器 checkout 只用于同步和执行，不用于编辑。任何脚本、Chart、workload
 或操作文档修改都必须先在本地 checkout 完成、测试、commit 并 push，再在
 服务器上执行 `git pull --ff-only` 同步；如果服务器工作区不是 clean，先停止
@@ -55,10 +59,14 @@ under the License.
 | 工作 | 执行节点 |
 | --- | --- |
 | Pulsar/Nereus、OMB 镜像构建 | `denovo-r730-1` |
-| Helm install/uninstall、Stage verify、evidence collect、冷重置 | `denovo-r730-1` |
+| Helm install/uninstall、Stage verify、evidence collect、冷重置 | Mac 本地 kubeconfig（`kubectl`/`helm`） |
 | OMB worker/空闲 driver Pod | Kubernetes 调度到 `denovo-win-1` |
 | SeaweedFS Pod | Kubernetes 调度到 `denovo-win-1` |
 | `run-case.sh`、宿主机 OMB coordinator、结果分析 | `denovo-win-1` |
+
+本次 k8s 操作边界固定为 Mac 本地 kubeconfig。主节点只负责镜像构建、containerd
+镜像传输、物理盘清理以及保存服务器侧证据；不要在服务器上直接执行 Helm/kubectl
+来替代本地操作，也不要在服务器 checkout 中编辑脚本、Chart 或 workload。
 
 每次代码更新后，先更新两个节点的 benchmark checkout，再在主节点重新构建
 OMB 镜像。源码 SHA、镜像构建 `SOURCE_SHA` 和两个节点 checkout 必须一致。

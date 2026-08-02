@@ -394,6 +394,42 @@ else
   )
 fi
 
+# The VictoriaMetrics dependency installs its admission webhook in the same
+# Helm transaction as the VMAgent/VMRule/VMSingle resources that call it. A
+# cold install can therefore race the operator startup and fail with a
+# connection-refused webhook error. Bootstrap only the operator and the core
+# Pulsar resources first; after its deployment is Ready, upgrade to the full
+# monitoring values below.
+monitoring_bootstrap_overrides=(
+  --set "victoria-metrics-k8s-stack.defaultRules.create=false"
+  --set "victoria-metrics-k8s-stack.defaultDashboards.enabled=false"
+  --set "victoria-metrics-k8s-stack.vmsingle.enabled=false"
+  --set "victoria-metrics-k8s-stack.vmagent.enabled=false"
+  --set "victoria-metrics-k8s-stack.vmalert.enabled=false"
+  --set "victoria-metrics-k8s-stack.alertmanager.enabled=false"
+  --set "victoria-metrics-k8s-stack.vmcluster.enabled=false"
+  --set "victoria-metrics-k8s-stack.vmauth.enabled=false"
+  --set "victoria-metrics-k8s-stack.grafana.enabled=false"
+  --set "victoria-metrics-k8s-stack.prometheus-node-exporter.enabled=false"
+  --set "victoria-metrics-k8s-stack.kube-state-metrics.enabled=false"
+  --set "victoria-metrics-k8s-stack.kubelet.enabled=false"
+  --set "victoria-metrics-k8s-stack.kubeApiServer.enabled=false"
+  --set "victoria-metrics-k8s-stack.kubeControllerManager.enabled=false"
+  --set "victoria-metrics-k8s-stack.coreDns.enabled=false"
+  --set "victoria-metrics-k8s-stack.kubeEtcd.enabled=false"
+  --set "victoria-metrics-k8s-stack.kubeScheduler.enabled=false"
+  --set "victoria-metrics-k8s-stack.victoria-metrics-operator.serviceMonitor.enabled=false"
+  --set "oxia.coordinator.podMonitor.enabled=false"
+  --set "oxia.server.podMonitor.enabled=false"
+  --set "bookkeeper.podMonitor.enabled=false"
+  --set "autorecovery.podMonitor.enabled=false"
+  --set "broker.podMonitor.enabled=false"
+  --set "proxy.podMonitor.enabled=false"
+  --set "zookeeper.podMonitor.enabled=false"
+  --set "function_worker.podMonitor.enabled=false"
+  --set "nereus.objectStore.seaweedfs.podMonitor.enabled=false"
+)
+
 echo "linting stage ${stage}"
 helm lint "${chart}" \
   "${helm_values_args[@]}" \
@@ -569,11 +605,27 @@ done
 } > "${preflight_dir}/sha256sums.txt"
 
 echo "deploying stage ${stage}"
+printf '%s\n' \
+  'operator-bootstrap=VictoriaMetrics CR-producing resources disabled' \
+  'operator-ready=required before full monitoring upgrade' \
+  > "${run_dir}/monitoring-bootstrap.txt"
 helm install "${release}" "${chart}" \
+  --namespace "${namespace}" \
+  "${helm_values_args[@]}" \
+  "${monitoring_bootstrap_overrides[@]}" \
+  "${helm_overrides[@]}" \
+  --timeout "${wait_timeout}"
+
+wait_rollout "deployment/${release}-victoria-metrics-operator"
+printf 'operator-ready-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  >> "${run_dir}/monitoring-bootstrap.txt"
+helm upgrade "${release}" "${chart}" \
   --namespace "${namespace}" \
   "${helm_values_args[@]}" \
   "${helm_overrides[@]}" \
   --timeout "${wait_timeout}"
+printf 'full-monitoring-upgrade-complete-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  >> "${run_dir}/monitoring-bootstrap.txt"
 
 wait_rollout "deployment/${release}-oxia-coordinator"
 wait_rollout "statefulset/${release}-oxia-server"
