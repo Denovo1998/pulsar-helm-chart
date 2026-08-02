@@ -236,6 +236,12 @@ metadata:
 spec:
   restartPolicy: Never
   terminationGracePeriodSeconds: 0
+  # Local BookKeeper PVs are hosted on the tainted Pulsar node.
+  tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   containers:
     - name: wipe
       image: ${wipe_image}

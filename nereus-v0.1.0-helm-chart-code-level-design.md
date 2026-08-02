@@ -2846,7 +2846,8 @@ ModularLoadManagerImpl”的 Helm 校验。
 4. 从运行中 release Pod 解析本轮恰好 16 个数据 PVC：
    Oxia 3、BookKeeper journal/ledger/index 12、SeaweedFS 1；
 5. `helm uninstall --wait` 后，为每个 PVC 创建短生命周期 cleaner Pod，
-   使用已导入的 frozen Apache image 挂载并清空文件系统；
+   使用已导入的 frozen Apache image 挂载并清空文件系统；cleaner 必须容忍
+   `dedicated=pulsar:NoSchedule`，以便挂载本地 BookKeeper PV 的节点能够调度；
 6. 任一 wipe 失败时停止且不得删除该 PVC；
 7. wipe 全部成功后删除 PVC；`Retain` PV 移除旧 claimRef 并等待
    `Available`，`Delete` PV 等待资源消失；
