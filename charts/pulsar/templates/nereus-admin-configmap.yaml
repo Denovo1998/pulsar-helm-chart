@@ -61,39 +61,42 @@ data:
     {{- if .Values.nereus.bookkeeperWal.enabled }}
     bookkeeper.deploymentId={{ .Values.nereus.bookkeeperWal.deploymentId }}
     bookkeeper.providerScopeSha256={{ .Values.nereus.bookkeeperWal.providerScopeSha256 }}
-    bookkeeper.ledgerIdPrefixBits={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits }}
-    bookkeeper.ledgerIdPrefixValue={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue }}
+    # Helm can decode unquoted large YAML integers as float64. Emit the
+    # integral BookKeeper bounds in decimal because nereus-admin parses these
+    # admin.properties values as Java long fields.
+    bookkeeper.ledgerIdPrefixBits={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixBits | int }}
+    bookkeeper.ledgerIdPrefixValue={{ .Values.nereus.bookkeeperWal.ledgerIdPrefixValue | int }}
     bookkeeper.reservationId={{ .Values.nereus.bookkeeperWal.ledgerIdNamespaceReservationId }}
-    bookkeeper.ensembleSize={{ .Values.nereus.bookkeeperWal.ensembleSize }}
-    bookkeeper.writeQuorumSize={{ .Values.nereus.bookkeeperWal.writeQuorumSize }}
-    bookkeeper.ackQuorumSize={{ .Values.nereus.bookkeeperWal.ackQuorumSize }}
+    bookkeeper.ensembleSize={{ .Values.nereus.bookkeeperWal.ensembleSize | int }}
+    bookkeeper.writeQuorumSize={{ .Values.nereus.bookkeeperWal.writeQuorumSize | int }}
+    bookkeeper.ackQuorumSize={{ .Values.nereus.bookkeeperWal.ackQuorumSize | int }}
     bookkeeper.digestType={{ .Values.nereus.bookkeeperWal.digestType }}
     bookkeeper.passwordSecretRef={{ .Values.nereus.secrets.bookKeeperPasswordReference }}
     bookkeeper.passwordIdentityVersion={{ .Values.nereus.bookkeeperWal.passwordIdentityVersion }}
-    bookkeeper.maxEntriesPerLedger={{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger }}
-    bookkeeper.maxBytesPerLedger={{ .Values.nereus.bookkeeperWal.maxBytesPerLedger }}
-    bookkeeper.maxAppendRangesPerLedger={{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger }}
-    bookkeeper.protectionSlotsPerRange={{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange }}
-    bookkeeper.maxReaderLeasesPerLedger={{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger }}
-    bookkeeper.maxUncertainAllocations={{ .Values.nereus.bookkeeperWal.maxUncertainAllocations }}
-    bookkeeper.maxLedgerAgeSeconds={{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds }}
-    bookkeeper.maxWritesInFlight={{ .Values.nereus.bookkeeperWal.maxWritesInFlight }}
-    bookkeeper.maxReadsInFlight={{ .Values.nereus.bookkeeperWal.maxReadsInFlight }}
-    bookkeeper.maxReadBytesInFlight={{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight }}
-    bookkeeper.operationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds }}
-    bookkeeper.allocationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds }}
-    bookkeeper.sealTimeoutSeconds={{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds }}
-    bookkeeper.deleteTimeoutSeconds={{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds }}
-    bookkeeper.readerLeaseSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseSeconds }}
-    bookkeeper.readerLeaseRenewSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds }}
-    bookkeeper.retentionScanIntervalSeconds={{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds }}
-    bookkeeper.retentionScanPageSize={{ .Values.nereus.bookkeeperWal.retentionScanPageSize }}
+    bookkeeper.maxEntriesPerLedger={{ .Values.nereus.bookkeeperWal.maxEntriesPerLedger | int }}
+    bookkeeper.maxBytesPerLedger={{ .Values.nereus.bookkeeperWal.maxBytesPerLedger | int }}
+    bookkeeper.maxAppendRangesPerLedger={{ .Values.nereus.bookkeeperWal.maxAppendRangesPerLedger | int }}
+    bookkeeper.protectionSlotsPerRange={{ .Values.nereus.bookkeeperWal.protectionSlotsPerRange | int }}
+    bookkeeper.maxReaderLeasesPerLedger={{ .Values.nereus.bookkeeperWal.maxReaderLeasesPerLedger | int }}
+    bookkeeper.maxUncertainAllocations={{ .Values.nereus.bookkeeperWal.maxUncertainAllocations | int }}
+    bookkeeper.maxLedgerAgeSeconds={{ .Values.nereus.bookkeeperWal.maxLedgerAgeSeconds | int }}
+    bookkeeper.maxWritesInFlight={{ .Values.nereus.bookkeeperWal.maxWritesInFlight | int }}
+    bookkeeper.maxReadsInFlight={{ .Values.nereus.bookkeeperWal.maxReadsInFlight | int }}
+    bookkeeper.maxReadBytesInFlight={{ .Values.nereus.bookkeeperWal.maxReadBytesInFlight | int }}
+    bookkeeper.operationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.operationTimeoutSeconds | int }}
+    bookkeeper.allocationTimeoutSeconds={{ .Values.nereus.bookkeeperWal.allocationTimeoutSeconds | int }}
+    bookkeeper.sealTimeoutSeconds={{ .Values.nereus.bookkeeperWal.sealTimeoutSeconds | int }}
+    bookkeeper.deleteTimeoutSeconds={{ .Values.nereus.bookkeeperWal.deleteTimeoutSeconds | int }}
+    bookkeeper.readerLeaseSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseSeconds | int }}
+    bookkeeper.readerLeaseRenewSeconds={{ .Values.nereus.bookkeeperWal.readerLeaseRenewSeconds | int }}
+    bookkeeper.retentionScanIntervalSeconds={{ .Values.nereus.bookkeeperWal.retentionScanIntervalSeconds | int }}
+    bookkeeper.retentionScanPageSize={{ .Values.nereus.bookkeeperWal.retentionScanPageSize | int }}
     bookkeeper.gc.enabled={{ .Values.nereus.bookkeeperWal.gc.enabled }}
     bookkeeper.gc.dryRun={{ .Values.nereus.bookkeeperWal.gc.dryRun }}
-    bookkeeper.gc.maxConcurrentDeletes={{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes }}
-    bookkeeper.gc.maxClockSkewSeconds={{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds }}
-    bookkeeper.gc.drainGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds }}
-    bookkeeper.gc.lateCreateAuditGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds }}
+    bookkeeper.gc.maxConcurrentDeletes={{ .Values.nereus.bookkeeperWal.gc.maxConcurrentDeletes | int }}
+    bookkeeper.gc.maxClockSkewSeconds={{ .Values.nereus.bookkeeperWal.gc.maxClockSkewSeconds | int }}
+    bookkeeper.gc.drainGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.drainGraceSeconds | int }}
+    bookkeeper.gc.lateCreateAuditGraceSeconds={{ .Values.nereus.bookkeeperWal.gc.lateCreateAuditGraceSeconds | int }}
     operatorEvidenceSha256={{ .Values.nereus.admin.operatorEvidenceSha256 }}
     {{- end }}
 {{- end }}

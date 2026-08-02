@@ -955,6 +955,11 @@ Stage B–E：
 ./scripts/verify-nereus-release.sh "${STAGE}"
 ```
 
+部署脚本会在 Helm install 前检查 Nereus admin 的 long-valued BookKeeper
+properties 不得被渲染成科学计数法；如果该门禁失败，保留本地 rendered
+manifest，修复本地 chart 后 commit/push，再同步服务器仓库，不要直接编辑
+服务器上的 ConfigMap 或源码。
+
 对应关系：
 
 | Stage | Broker 与数据路径 | namespace storage class |

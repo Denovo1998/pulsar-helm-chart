@@ -447,6 +447,11 @@ if grep -Eq \
     "${manifest}"; then
   die "rendered manifest contains an unresolved image or identity placeholder: ${manifest}"
 fi
+if grep -Eq \
+    'bookkeeper\.(maxBytesPerLedger|maxReadBytesInFlight)=[0-9.]+[eE][+-][0-9]+' \
+    "${manifest}"; then
+  die "rendered Nereus admin properties contain scientific notation for a Java long: ${manifest}"
+fi
 grep -F \
   "metadataStoreUrl: \"oxia://${release}-oxia-svc:6648/broker\"" \
   "${manifest}" >/dev/null \
