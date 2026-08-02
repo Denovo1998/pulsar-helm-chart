@@ -1242,7 +1242,9 @@ NEREUS_COLD_RESET_CONFIRM="${NEREUS_NAMESPACE}/${NEREUS_RELEASE}/${STAGE}" \
 
 reset 脚本会卸载 `pulsar/nereus`，擦除并删除 3 个 Oxia PVC、12 个
 BookKeeper PVC 和 1 个 SeaweedFS PVC，然后把 `Retain` PV 恢复为
-`Available`。它不会删除：
+`Available`。静态 local/hostPath PV 使用 `Delete` reclaim policy 时没有
+Kubernetes deletion plugin，脚本会在数据已擦除后删除 PV 对象；下一轮部署前
+必须按第 4 节重新 apply 冻结的静态 PV YAML。它不会删除：
 
 - `pulsar` namespace；
 - `pulsar-nereus-secrets`；
@@ -1258,8 +1260,9 @@ kubectl get pv \
   -o custom-columns='NAME:.metadata.name,CLASS:.spec.storageClassName,PHASE:.status.phase,CAPACITY:.spec.capacity.storage'
 ```
 
-确认 `pulsar/nereus` 和 16 个核心数据 PVC 均不存在，所需静态 PV 都是
-`Available`，才能安装下一次测试。
+确认 `pulsar/nereus` 和 16 个核心数据 PVC 均不存在，Retain PV 是
+`Available`，并按第 4 节重新 apply 后确认所需静态 PV 都是 `Available`，才能
+安装下一次测试。
 
 ## 10. Workload 选择与命令
 

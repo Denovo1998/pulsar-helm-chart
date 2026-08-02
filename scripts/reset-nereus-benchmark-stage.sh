@@ -309,9 +309,24 @@ while IFS=$'\t' read -r pvc pv storage_class reclaim_policy volume_source; do
       wait_for_pv_phase "${pv}" "Available"
       ;;
     Delete)
-      kubectl wait --for=delete "persistentvolume/${pv}" \
-        --timeout="${wait_timeout}" >/dev/null 2>&1 \
-        || die "Delete-policy PV did not disappear: ${pv}"
+      local_pv_path="$(kubectl get "persistentvolume/${pv}" \
+        -o jsonpath='{.spec.local.path}' 2>/dev/null || true)"
+      host_pv_path="$(kubectl get "persistentvolume/${pv}" \
+        -o jsonpath='{.spec.hostPath.path}' 2>/dev/null || true)"
+      if [[ -n "${local_pv_path}${host_pv_path}" ]]; then
+        # Static local/hostPath PVs have no deletion plugin. Their data was
+        # wiped above, so remove the PV object and re-apply its YAML later.
+        kubectl delete "persistentvolume/${pv}" \
+          --ignore-not-found --wait=true --timeout="${wait_timeout}" \
+          >/dev/null \
+          || die "static Delete-policy PV could not be removed: ${pv}"
+        kubectl get "persistentvolume/${pv}" >/dev/null 2>&1 \
+          && die "static Delete-policy PV still exists: ${pv}"
+      else
+        kubectl wait --for=delete "persistentvolume/${pv}" \
+          --timeout="${wait_timeout}" >/dev/null 2>&1 \
+          || die "Delete-policy PV did not disappear: ${pv}"
+      fi
       ;;
     Recycle)
       wait_for_pv_phase "${pv}" "Available"

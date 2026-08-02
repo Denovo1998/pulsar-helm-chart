@@ -2850,7 +2850,9 @@ ModularLoadManagerImpl”的 Helm 校验。
    `dedicated=pulsar:NoSchedule`，以便挂载本地 BookKeeper PV 的节点能够调度；
 6. 任一 wipe 失败时停止且不得删除该 PVC；
 7. wipe 全部成功后删除 PVC；`Retain` PV 移除旧 claimRef 并等待
-   `Available`，`Delete` PV 等待资源消失；
+   `Available`，动态 `Delete` PV 等待资源消失；静态 local/hostPath
+   `Delete` PV 因没有 deletion plugin，必须在 wipe 完成后删除 PV 对象，下一轮
+   再从冻结 YAML apply；
 8. 保存 PVC/PV mapping、逐 PVC wipe log、完成记录及 SHA-256。
 
 namespace、手工创建的 Secret、campaign values 和本地 results/evidence 不由
