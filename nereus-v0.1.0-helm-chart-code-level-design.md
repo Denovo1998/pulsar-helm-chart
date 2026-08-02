@@ -2328,6 +2328,7 @@ helm install
   -> Broker starts read-capable runtime
   -> GET stable generation persistent-broker readiness
   -> prepare BK publication activation
+     (PREPARED；publication bits暂为false)
   -> activate all three publication bits
   -> POST generation registration backfill
      (broker内部完成 readiness重检、proof install和generation publication activation)
@@ -2356,6 +2357,13 @@ generation readiness 作为唯一 bootstrap authority。服务端按当前进程
 binding未安装 -> 只接受当前generation readiness
 binding已安装 -> 只接受当前BookKeeper primary-WAL readiness
 ```
+
+`activation/prepare` 只负责写入并返回 `PREPARED` activation identity；此时
+`walOnlyPublicationEnabled`、`asyncPublicationEnabled`、
+`syncPublicationEnabled` 和 `ledgerDeletionEnabled` 必须仍为 `false`。
+只有紧接着的 `activation/publications` 成功响应才允许要求这些 capability
+为 `true`。脚本不能把 prepare 的中间态误判成失败，也不能跳过 publications
+直接执行 backfill。
 
 即使重启前后 broker 集合表面上未变化，两类 readiness 的 hash domain 也不同，
 所以 post-restart reconciliation 是强制步骤，不是条件分支。

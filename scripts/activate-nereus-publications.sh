@@ -144,12 +144,16 @@ activate_against_readiness() {
   jq -e \
     --argjson epoch "${readiness_epoch}" \
     --arg sha "${readiness_sha}" \
-    '.metadataVersion >= 0
-      and .walOnlyPublicationEnabled == true
+    '.lifecycle == "PREPARED"
+      and .metadataVersion >= 0
+      and .walOnlyPublicationEnabled == false
+      and .asyncPublicationEnabled == false
+      and .syncPublicationEnabled == false
+      and .ledgerDeletionEnabled == false
       and .brokerReadinessEpoch == $epoch
       and .brokerReadinessSha256 == $sha' \
     "${prepare_file}" >/dev/null \
-    || die "BookKeeper activation prepare did not establish WAL_ONLY publication"
+    || die "BookKeeper activation prepare did not return the expected PREPARED state"
 
   api_post "bookkeeper-primary-wal/activation/publications" \
     "$(jq -cn \

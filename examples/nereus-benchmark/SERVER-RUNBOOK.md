@@ -962,6 +962,9 @@ long-valued BookKeeper properties 不得被渲染成科学计数法；如果该�
 Broker ConfigMap 中只存在于 Nereus 镜像的 BookKeeper fields 还必须使用
 `PULSAR_PREFIX_` 环境变量形式，否则容器 entrypoint 不会把它们加入
 `broker.conf`，运行时会退回 `nereusBookKeeperPrimaryWalEnabled=false`。
+激活脚本的第一次 `bookkeeper-primary-wal/activation/prepare` 返回
+`PREPARED` 且 publication bits 为 `false` 是正常中间态；随后必须通过
+`activation/publications` 才进入 `ACTIVE`，不能把 prepare 响应直接当成已激活。
 
 对应关系：
 

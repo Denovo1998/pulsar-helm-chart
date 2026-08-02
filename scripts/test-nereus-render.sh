@@ -147,6 +147,12 @@ if grep -Eq '^[[:space:]]*workload: app$' "${seaweedfs_manifest}"; then
 fi
 grep -F 'pulsar-nereus-admin' "${stage_b_manifest}" >/dev/null \
   || die "stage B did not render the Nereus admin ConfigMap"
+grep -F 'PULSAR_PREFIX_nereusBookKeeperPrimaryWalEnabled: "true"' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "stage B did not expose the Nereus BookKeeper runtime flag"
+grep -F 'PULSAR_PREFIX_nereusBookKeeperEnsembleSize: "3"' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "stage B did not expose the Nereus BookKeeper quorum settings"
 grep -F -- '- /dev/termination-log' "${stage_b_manifest}" >/dev/null \
   || die "stage B bootstrap does not preserve termination evidence"
 grep -F \

@@ -53,7 +53,7 @@ job_deadline_seconds=$((admin_timeout_seconds + 120))
 evidence_dir="${RUN_DIR}/object-store-contract"
 mkdir -p "${evidence_dir}"
 
-for command_name in helm kubectl jq od tr sed; do
+for command_name in helm kubectl jq od tr; do
   require_command "${command_name}"
 done
 recorded_context="${KUBERNETES_CONTEXT:-}"
@@ -102,9 +102,11 @@ run_admin_job() {
   admin_args+=(--output /dev/termination-log)
   local args_yaml=""
   local argument
+  local argument_json
   local job_pod_json
   for argument in "${admin_args[@]}"; do
-    args_yaml+="            - $(printf '%s' "${argument}" | sed 's/\"/\\\"/g')"$'\n'
+    argument_json="$(jq -Rn --arg value "${argument}" '$value')"
+    args_yaml+="            - ${argument_json}"$'\n'
   done
 
   {

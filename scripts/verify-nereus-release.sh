@@ -264,13 +264,14 @@ if [[ "${stage}" != "A" ]]; then
   jq -e \
     --arg profile "${expected_profile}" \
     '.data.nereusDefaultStorageProfile == $profile
-      and .data.nereusBookKeeperEnsembleSize == "3"
-      and .data.nereusBookKeeperWriteQuorumSize == "3"
-      and .data.nereusBookKeeperAckQuorumSize == "2"
+      and .data["PULSAR_PREFIX_nereusBookKeeperPrimaryWalEnabled"] == "true"
+      and .data["PULSAR_PREFIX_nereusBookKeeperEnsembleSize"] == "3"
+      and .data["PULSAR_PREFIX_nereusBookKeeperWriteQuorumSize"] == "3"
+      and .data["PULSAR_PREFIX_nereusBookKeeperAckQuorumSize"] == "2"
       and .data.nereusPhysicalGcEnabled == "false"
       and .data.nereusPhysicalGcDryRun == "true"
-      and .data.nereusBookKeeperGcEnabled == "false"
-      and .data.nereusBookKeeperGcDryRun == "true"' \
+      and .data["PULSAR_PREFIX_nereusBookKeeperGcEnabled"] == "false"
+      and .data["PULSAR_PREFIX_nereusBookKeeperGcDryRun"] == "true"' \
     "${broker_config}" >/dev/null \
     || die "rendered Nereus broker configuration does not match stage ${stage}"
 
