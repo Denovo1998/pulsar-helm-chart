@@ -955,6 +955,20 @@ Stage B–E：
 ./scripts/verify-nereus-release.sh "${STAGE}"
 ```
 
+如果控制进程在 Helm install/upgrade 已完成、但 `run.env` 写入之前被中断，
+不要手工伪造或覆盖 `latest.env`。确认现有 release 的 stage 和 storage class
+仍与本轮一致后，可在本地源码已 commit/push 且服务器仓库已同步的前提下，使用
+受约束的恢复模式完成部署收尾：
+
+```bash
+NEREUS_RESUME_RUN_STAMP='20260803T000000Z' \
+  ./scripts/deploy-nereus-stage.sh "${STAGE}" --resume
+```
+
+`--resume` 只接受已存在且 annotation 完全匹配的 release，跳过 Helm install/
+upgrade，仅重新收集部署证据、创建本轮 tenant/namespace/topic 并生成新的
+`run.env`/`latest.env`；正常的冷启动仍必须先执行 reset，不能用该模式绕过冷重置。
+
 部署脚本会在 Helm install 前检查 Nereus admin 和 Broker ConfigMap 中的
 long-valued BookKeeper properties 不得被渲染成科学计数法；如果该门禁失败，
 保留本地 rendered manifest，修复本地 chart 后 commit/push，再同步服务器仓库，
@@ -1475,6 +1489,11 @@ NEREUS_RUN_ENV="${FAILED_RUN}/run.env" \
 ```
 
 不要手工伪造或覆盖 `latest.env`。
+
+只有在控制进程确实在部署脚本写出 `RUN_DIR/run.env` 之前中断、且 release
+已经完成安装的恢复场景，才允许使用上面的 `--resume`。如果已有 `run.env`
+或已经开始 activation/contract/workload，则必须按本轮证据收集和冷重置流程处理，
+不能用 `--resume` 重建身份。
 
 reset 脚本清理 16 个核心数据 PVC：Oxia 3、BookKeeper 12、
 SeaweedFS 1。VMSingle 和 Grafana 的监控持久化卷不在该集合中。如果正式

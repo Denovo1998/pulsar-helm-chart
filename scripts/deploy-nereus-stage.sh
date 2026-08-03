@@ -112,11 +112,20 @@ wait_job() {
   fi
 }
 
-stage="${1:?usage: deploy-nereus-stage.sh A|B|C|D|E}"
+stage="${1:?usage: deploy-nereus-stage.sh A|B|C|D|E [--resume]}"
+mode="${2:-}"
 case "${stage}" in
   A|B|C|D|E) ;;
   *) die "invalid stage: ${stage}" ;;
 esac
+case "${mode}" in
+  ""|--resume) ;;
+  *) die "invalid mode: ${mode}; expected --resume or no second argument" ;;
+esac
+resume=false
+if [[ "${mode}" == "--resume" ]]; then
+  resume=true
+fi
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
@@ -202,7 +211,13 @@ if [[ -n "${operator_evidence_file}" ]]; then
 else
   die "operator evidence is required for stages A-E; use prepare-nereus-campaign-values.sh"
 fi
-run_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+if [[ "${resume}" == true && -n "${NEREUS_RESUME_RUN_STAMP:-}" ]]; then
+  run_stamp="${NEREUS_RESUME_RUN_STAMP}"
+else
+  run_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+fi
+[[ "${run_stamp}" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] \
+  || die "run stamp must use UTC format YYYYMMDDTHHMMSSZ: ${run_stamp}"
 stage_lower="$(printf '%s' "${stage}" | tr '[:upper:]' '[:lower:]')"
 tenant="${NEREUS_BENCHMARK_TENANT:-nereus-perf}"
 benchmark_namespace="${NEREUS_BENCHMARK_NAMESPACE:-stage-${stage_lower}-${run_stamp}}"
@@ -499,8 +514,22 @@ fi
 
 kubectl get namespace "${namespace}" >/dev/null 2>&1 \
   || die "target namespace ${namespace} must exist before deployment"
-if helm -n "${namespace}" status "${release}" >/dev/null 2>&1; then
-  die "cold-start deployment requires no existing Helm release: ${namespace}/${release}; run reset-nereus-benchmark-stage.sh first"
+if [[ "${resume}" == true ]]; then
+  helm -n "${namespace}" status "${release}" >/dev/null 2>&1 \
+    || die "resume requires an existing Helm release: ${namespace}/${release}"
+  broker_statefulset_json="$(kubectl -n "${namespace}" get \
+    "statefulset/${release}-broker" -o json)"
+  jq -e \
+    --arg stage "${stage}" \
+    --arg storageClass "${storage_class}" \
+    '.spec.template.metadata.annotations["benchmark.nereusstream.com/stage"] == $stage
+      and .spec.template.metadata.annotations["benchmark.nereusstream.com/managed-ledger-storage-class"] == $storageClass' \
+    <<<"${broker_statefulset_json}" >/dev/null \
+    || die "existing release does not match the requested resumed stage ${stage}/${storage_class}"
+else
+  if helm -n "${namespace}" status "${release}" >/dev/null 2>&1; then
+    die "cold-start deployment requires no existing Helm release: ${namespace}/${release}; run reset-nereus-benchmark-stage.sh first"
+  fi
 fi
 kubectl get nodes -l workload=pulsar -o json \
   > "${run_dir}/pulsar-nodes-before.json"
@@ -547,28 +576,30 @@ kubectl get storageclass "${oxia_storage_class}" -o json \
   || die "required Oxia StorageClass does not exist: ${oxia_storage_class}"
 kubectl -n "${namespace}" get persistentvolumeclaims -o json \
   > "${run_dir}/oxia-pvcs-before.json"
-existing_release_data_pvcs="$(
-  jq -r \
-    --arg release "${release}" '
-      def is_release_data_pvc($r):
-        startswith($r + "-oxia-data-" + $r + "-oxia-server-")
-        or startswith($r + "-bookie-journal-" + $r + "-bookie-")
-        or startswith($r + "-bookie-ledgers-" + $r + "-bookie-")
-        or startswith($r + "-bookie-index-" + $r + "-bookie-")
-        or startswith("data-" + $r + "-seaweedfs-");
-      [.items[]
-        | .metadata.name
-        | select(is_release_data_pvc($release))]
-      | .[]
-    ' "${run_dir}/oxia-pvcs-before.json"
-)"
-[[ -z "${existing_release_data_pvcs}" ]] \
-  || die "cold-start deployment found residual data PVCs; run reset-nereus-benchmark-stage.sh first: ${existing_release_data_pvcs//$'\n'/,}"
+if [[ "${resume}" != true ]]; then
+  existing_release_data_pvcs="$(
+    jq -r \
+      --arg release "${release}" '
+        def is_release_data_pvc($r):
+          startswith($r + "-oxia-data-" + $r + "-oxia-server-")
+          or startswith($r + "-bookie-journal-" + $r + "-bookie-")
+          or startswith($r + "-bookie-ledgers-" + $r + "-bookie-")
+          or startswith($r + "-bookie-index-" + $r + "-bookie-")
+          or startswith("data-" + $r + "-seaweedfs-");
+        [.items[]
+          | .metadata.name
+          | select(is_release_data_pvc($release))]
+        | .[]
+      ' "${run_dir}/oxia-pvcs-before.json"
+  )"
+  [[ -z "${existing_release_data_pvcs}" ]] \
+    || die "cold-start deployment found residual data PVCs; run reset-nereus-benchmark-stage.sh first: ${existing_release_data_pvcs//$'\n'/,}"
+fi
 oxia_pvc_prefix="${release}-oxia-data-${release}-oxia-server-"
 oxia_storage_provisioner="$(
   jq -r '.provisioner' "${run_dir}/oxia-storage-class.json"
 )"
-if [[ "${oxia_storage_provisioner}" == "kubernetes.io/no-provisioner" ]]; then
+if [[ "${resume}" != true && "${oxia_storage_provisioner}" == "kubernetes.io/no-provisioner" ]]; then
   kubectl get persistentvolumes -o json \
     > "${run_dir}/persistent-volumes-before.json"
   available_oxia_pvs="$(
@@ -615,28 +646,36 @@ done
   printf '%s  %s\n' "$(sha256_file "${manifest}")" "${manifest}"
 } > "${preflight_dir}/sha256sums.txt"
 
-echo "deploying stage ${stage}"
-printf '%s\n' \
-  'operator-bootstrap=VictoriaMetrics CR-producing resources disabled' \
-  'operator-ready=required before full monitoring upgrade' \
-  > "${run_dir}/monitoring-bootstrap.txt"
-helm install "${release}" "${chart}" \
-  --namespace "${namespace}" \
-  "${helm_values_args[@]}" \
-  "${monitoring_bootstrap_overrides[@]}" \
-  "${helm_overrides[@]}" \
-  --timeout "${wait_timeout}"
+if [[ "${resume}" == true ]]; then
+  echo "resuming stage ${stage} without changing the existing Helm release"
+  printf '%s\n' \
+    'resume-existing-release=true' \
+    'helm-install-upgrade=skipped' \
+    > "${run_dir}/monitoring-bootstrap.txt"
+else
+  echo "deploying stage ${stage}"
+  printf '%s\n' \
+    'operator-bootstrap=VictoriaMetrics CR-producing resources disabled' \
+    'operator-ready=required before full monitoring upgrade' \
+    > "${run_dir}/monitoring-bootstrap.txt"
+  helm install "${release}" "${chart}" \
+    --namespace "${namespace}" \
+    "${helm_values_args[@]}" \
+    "${monitoring_bootstrap_overrides[@]}" \
+    "${helm_overrides[@]}" \
+    --timeout "${wait_timeout}"
 
-wait_rollout "deployment/${release}-victoria-metrics-operator"
-printf 'operator-ready-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  >> "${run_dir}/monitoring-bootstrap.txt"
-helm upgrade "${release}" "${chart}" \
-  --namespace "${namespace}" \
-  "${helm_values_args[@]}" \
-  "${helm_overrides[@]}" \
-  --timeout "${wait_timeout}"
-printf 'full-monitoring-upgrade-complete-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-  >> "${run_dir}/monitoring-bootstrap.txt"
+  wait_rollout "deployment/${release}-victoria-metrics-operator"
+  printf 'operator-ready-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "${run_dir}/monitoring-bootstrap.txt"
+  helm upgrade "${release}" "${chart}" \
+    --namespace "${namespace}" \
+    "${helm_values_args[@]}" \
+    "${helm_overrides[@]}" \
+    --timeout "${wait_timeout}"
+  printf 'full-monitoring-upgrade-complete-at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+    >> "${run_dir}/monitoring-bootstrap.txt"
+fi
 
 wait_rollout "deployment/${release}-oxia-coordinator"
 wait_rollout "statefulset/${release}-oxia-server"

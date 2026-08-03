@@ -2860,6 +2860,12 @@ ModularLoadManagerImpl”的 Helm 校验。
 执行，不允许原地 upgrade。profile 变化不迁移既有 topic，而是在前一 stage
 全部物理数据清空、PV 恢复 `Available` 后重新安装。
 
+如果控制进程在 Helm install/upgrade 已完成、但写入 `RUN_DIR/run.env` 前中断，
+部署脚本允许显式的 `--resume` 收尾模式。该模式只接受 live release 的 stage
+和 managed-ledger storage class annotation 与请求完全匹配的情况，跳过 Helm
+install/upgrade，仅重新完成 readiness、初始化身份、运行证据和 `run.env` 写入；
+它不是在线切换 profile 或绕过冷重置的通用入口。
+
 `reset-nereus-benchmark-stage.sh` 必须：
 
 1. 从本轮 `run.env` 绑定 stage、context、release 和 namespace；
