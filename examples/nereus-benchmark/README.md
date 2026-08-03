@@ -346,6 +346,12 @@ contract, leaves one exact marker, restarts SeaweedFS, verifies the same marker,
 then conditionally removes it. B–E verification fails closed when any contract
 or restart-persistence evidence file is absent or unsuccessful.
 
+The benchmark deliberately keeps Pulsar's inactive-topic cleanup policy
+enabled. Because an empty smoke topic can be removed after 60 seconds without
+subscriptions, activation and release verification both idempotently ensure
+the recorded smoke topic immediately before collecting its stats. This does
+not change the stage storage class or workload topic behavior.
+
 Every script writes non-secret evidence below the deployment run directory.
 The deployment run records the Kubernetes context; every later gate rejects a
 different current context, release, or namespace. `collect-helm-evidence.sh`

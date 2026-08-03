@@ -989,6 +989,11 @@ generation backfill。
 新部署中 BookKeeper readiness 尚不可用，脚本才使用 generation readiness
 完成第一次 bootstrap；已有 ACTIVE record 的恢复必须先使用当前 BookKeeper
 readiness，不能把两个 readiness domain 混用。
+当前 benchmark values 保留 Pulsar 的 inactive-topic cleanup：空 topic 在无
+subscription 时可能于 60 秒后被删除。因此 A/B 部署阶段保存的初始 stock
+smoke-topic stats 只是部署证据；activation 和 release verification 会在各自
+最终 stats 采集前幂等 ensure 该 topic。遇到 `Topic ... not found` 时，应先确认
+运行的是已同步的本地脚本版本，不要把它归因于 Oxia 或 BookKeeper 元数据丢失。
 
 对应关系：
 

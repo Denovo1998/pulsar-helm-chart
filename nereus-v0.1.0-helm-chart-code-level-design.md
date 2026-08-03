@@ -2862,7 +2862,9 @@ ModularLoadManagerImpl”的 Helm 校验。
    Toolset
 9. 创建全新的 tenant/namespace。
 10. 通过 pulsar-admin set-persistence写入3/3/2和stage storage class。
-11. A/B创建stock smoke topic；C–E在activation完成后创建Nereus smoke topic。
+11. A/B先创建stock smoke topic并保存部署证据；activation和release
+    verification在最终stats采集前对所有阶段幂等ensure smoke topic。C–E
+    的最终topic仍按namespace storage class使用Nereus路径。
 12. 保存run.env、campaign/evidence SHA、镜像ID、namespace policy和Pod证据；
     Apache/Nereus/admin必须匹配build manifest完整image ID，四个Oxia container
     必须收敛到同一个SHA-256 image identity。

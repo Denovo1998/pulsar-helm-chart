@@ -274,9 +274,22 @@ pulsar_admin() {
   kubectl -n "${namespace}" exec "${toolset_pod}" -- bin/pulsar-admin "$@"
 }
 
-if [[ "${stage}" == "C" || "${stage}" == "D" || "${stage}" == "E" ]]; then
-  pulsar_admin topics create "${BENCHMARK_TOPIC}"
-fi
+ensure_smoke_topic() {
+  # The benchmark keeps Pulsar's inactive-topic cleanup enabled. An empty
+  # smoke topic created during deployment can therefore disappear while the
+  # activation restart and post-restart reconciliation are running. Make the
+  # final evidence point self-contained and safe to retry for every stage.
+  if pulsar_admin topics create "${BENCHMARK_TOPIC}"; then
+    return 0
+  fi
+  if pulsar_admin topics stats "${BENCHMARK_TOPIC}" >/dev/null 2>&1; then
+    echo "smoke topic already exists; continuing with activation evidence"
+    return 0
+  fi
+  die "smoke topic could not be created or read: ${BENCHMARK_TOPIC}"
+}
+
+ensure_smoke_topic
 pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
   > "${activation_dir}/smoke-topic-stats.json"
 

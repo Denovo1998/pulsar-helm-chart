@@ -332,6 +332,20 @@ if [[ -d "${RUN_DIR}/object-store-contract" ]]; then
   done
 fi
 
+ensure_smoke_topic() {
+  # Keep verification independent from the 60-second inactive-topic cleanup
+  # window when the empty smoke topic was created earlier in the run.
+  if pulsar_admin topics create "${BENCHMARK_TOPIC}"; then
+    return 0
+  fi
+  if pulsar_admin topics stats "${BENCHMARK_TOPIC}" >/dev/null 2>&1; then
+    echo "smoke topic already exists; continuing with release verification"
+    return 0
+  fi
+  die "smoke topic could not be created or read: ${BENCHMARK_TOPIC}"
+}
+
+ensure_smoke_topic
 pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
   > "${verification_dir}/smoke-topic-stats.json"
 kubectl -n "${namespace}" get pods \
