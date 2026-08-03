@@ -986,6 +986,9 @@ Broker ConfigMap 中只存在于 Nereus 镜像的 BookKeeper fields 还必须使
 幂等语义返回已有的 `ACTIVE` 记录；脚本仍必须继续执行
 `activation/publications`，并用当前 readiness 校验返回值，不能跳过重绑定和
 generation backfill。
+新部署中 BookKeeper readiness 尚不可用，脚本才使用 generation readiness
+完成第一次 bootstrap；已有 ACTIVE record 的恢复必须先使用当前 BookKeeper
+readiness，不能把两个 readiness domain 混用。
 
 对应关系：
 

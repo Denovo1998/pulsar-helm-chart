@@ -2349,14 +2349,20 @@ Broker restart会改变 process identity，因此脚本必须把 post-restart re
 视为新的权威输入；不能仅凭 restart前的 activation证据宣告完成。
 
 首次启动时 Broker 尚未从 durable activation 安装 BookKeeper binding，因此
-BookKeeper 专用 readiness 必然不可用。首次 publication activation 使用
-generation readiness 作为唯一 bootstrap authority。服务端按当前进程状态重新
-读取并校验：
+BookKeeper 专用 readiness 必然不可用；新建 activation 使用 generation
+readiness 作为唯一 bootstrap authority。若控制进程在 activation 已经写入
+后中断并重试，Broker 已经 advertise durable BookKeeper binding，脚本必须先
+探测当前 BookKeeper readiness，并以它作为已有 activation 的 publication
+authority。服务端按当前进程状态重新读取并校验：
 
 ```text
 binding未安装 -> 只接受当前generation readiness
 binding已安装 -> 只接受当前BookKeeper primary-WAL readiness
 ```
+
+脚本只有在 BookKeeper readiness 还不可用时才回退到 generation readiness；这
+同时覆盖 fresh bootstrap 和已有 ACTIVE record 的 idempotent recovery，而不
+把两个 readiness domain 混用。
 
 `activation/prepare` 在新建时写入并返回 `PREPARED` activation identity；此时
 `walOnlyPublicationEnabled`、`asyncPublicationEnabled`、

@@ -213,11 +213,24 @@ api_get "generation-protocol/readiness" \
   > "${activation_dir}/generation-readiness-before.json"
 require_readiness "${activation_dir}/generation-readiness-before.json"
 
-# The first publication activation deliberately uses the generic generation
-# capability snapshot. Brokers do not advertise their ACTIVE BookKeeper
-# publication binding until they restart and reload the durable activation.
+# A fresh deployment has no durable publication binding, so its first
+# activation must use the generic generation readiness. On an interrupted
+# retry, an existing ACTIVE record means brokers already advertise the
+# BookKeeper binding and the service requires the current BookKeeper readiness
+# instead. Probe the stronger authority first and fall back only when it is
+# not yet available.
+initial_publication_readiness_file="${activation_dir}/generation-readiness-before.json"
+if api_get "bookkeeper-primary-wal/readiness" \
+    > "${activation_dir}/bookkeeper-readiness-before.json" \
+    2> "${activation_dir}/bookkeeper-readiness-before.error.txt"; then
+  require_readiness "${activation_dir}/bookkeeper-readiness-before.json"
+  initial_publication_readiness_file="${activation_dir}/bookkeeper-readiness-before.json"
+else
+  rm -f "${activation_dir}/bookkeeper-readiness-before.json"
+fi
+
 activate_against_readiness \
-  "${activation_dir}/generation-readiness-before.json" \
+  "${initial_publication_readiness_file}" \
   "${activation_dir}/generation-readiness-before.json" \
   ""
 
