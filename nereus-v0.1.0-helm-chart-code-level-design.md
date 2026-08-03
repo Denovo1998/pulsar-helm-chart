@@ -2510,6 +2510,11 @@ broker:
       loadManagerClassName:
          org.apache.pulsar.broker.loadbalance.extensions.ExtensibleLoadManagerImpl
 
+      # OMB 不使用 per-topic policies。关闭 Pulsar 5.0.0-M1 可选的
+      # __change_events policy-cache 路径，避免空 system-topic reader 在
+      # Broker restart 后阻塞 topic load；A–E 必须共同使用该控制项。
+      topicLevelPoliciesEnabled: "false"
+
       managedLedgerDefaultEnsembleSize: "3"
       managedLedgerDefaultWriteQuorum: "3"
       managedLedgerDefaultAckQuorum: "2"

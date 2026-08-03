@@ -1483,6 +1483,21 @@ tee "${RESULT_DIR}/analysis.json"
 CPU/memory、placement、compression 和 workload。任一条件改变都必须开始
 新的 campaign，不能把结果混入当前表格。
 
+### 12.1 Benchmark control-plane setting
+
+`examples/nereus-benchmark/values-common.yaml` 对 A–E 共同设置
+`broker.configData.topicLevelPoliciesEnabled: "false"`。OMB workload 不使用
+topic-level policies；这个设置只关闭 Pulsar 5.0.0-M1 的可选 system-topic
+policy cache 路径，不改变 Nereus storage profile、BookKeeper 参数或 workload
+语义。
+
+这是一个基准控制面设置，不是 Nereus 镜像修改。未关闭时，在 Broker restart
+之后创建/加载 smoke topic 可能卡在 `__change_events` reader，并出现
+`Timed out after 60 seconds initializing the topic policies cache for namespace`。
+如果出现该错误，必须记录对应 Broker 日志和渲染后的 `broker.configData`，不能
+把它归因于 Nereus 对象存储性能。A–E 必须使用同一项设置，并在 manifest/render
+证据中保存其最终值。
+
 ## 13. 失败处理与冷启动边界
 
 如果部署后置门禁失败，本次 `RUN_DIR/run.env` 会保留，但不会提升为
