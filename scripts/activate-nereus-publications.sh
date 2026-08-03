@@ -141,19 +141,31 @@ activate_against_readiness() {
         brokerReadinessSha256:$sha,
         timeoutSeconds:$timeout}')" \
     > "${prepare_file}"
+
+  # A fresh prepare is PREPARED. If the controller was interrupted after the
+  # following publications CAS, the server intentionally returns the durable
+  # ACTIVE record from this idempotent prepare call. Keep going: the
+  # publications request below is the authoritative retry/rebind operation and
+  # must still validate the requested post-restart readiness.
   jq -e \
     --argjson epoch "${readiness_epoch}" \
     --arg sha "${readiness_sha}" \
-    '.lifecycle == "PREPARED"
-      and .metadataVersion >= 0
-      and .walOnlyPublicationEnabled == false
-      and .asyncPublicationEnabled == false
-      and .syncPublicationEnabled == false
-      and .ledgerDeletionEnabled == false
-      and .brokerReadinessEpoch == $epoch
-      and .brokerReadinessSha256 == $sha' \
+    '(.metadataVersion >= 0)
+      and (
+        (.lifecycle == "PREPARED"
+          and .walOnlyPublicationEnabled == false
+          and .asyncPublicationEnabled == false
+          and .syncPublicationEnabled == false
+          and .ledgerDeletionEnabled == false
+          and .brokerReadinessEpoch == $epoch
+          and .brokerReadinessSha256 == $sha)
+        or
+        (.lifecycle == "ACTIVE"
+          and .walOnlyPublicationEnabled == true
+          and (.publicationActivationSha256 | test("^[0-9a-f]{64}$")))
+      )' \
     "${prepare_file}" >/dev/null \
-    || die "BookKeeper activation prepare did not return the expected PREPARED state"
+    || die "BookKeeper activation prepare did not return PREPARED or a resumable ACTIVE state"
 
   api_post "bookkeeper-primary-wal/activation/publications" \
     "$(jq -cn \

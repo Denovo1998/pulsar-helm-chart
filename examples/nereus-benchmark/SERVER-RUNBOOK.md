@@ -982,6 +982,10 @@ Broker ConfigMap 中只存在于 Nereus 镜像的 BookKeeper fields 还必须使
 激活脚本的第一次 `bookkeeper-primary-wal/activation/prepare` 返回
 `PREPARED` 且 publication bits 为 `false` 是正常中间态；随后必须通过
 `activation/publications` 才进入 `ACTIVE`，不能把 prepare 响应直接当成已激活。
+如果控制进程在第一次 publications CAS 成功后中断，重试 prepare 会按服务端
+幂等语义返回已有的 `ACTIVE` 记录；脚本仍必须继续执行
+`activation/publications`，并用当前 readiness 校验返回值，不能跳过重绑定和
+generation backfill。
 
 对应关系：
 

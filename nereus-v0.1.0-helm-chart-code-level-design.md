@@ -2358,12 +2358,14 @@ binding未安装 -> 只接受当前generation readiness
 binding已安装 -> 只接受当前BookKeeper primary-WAL readiness
 ```
 
-`activation/prepare` 只负责写入并返回 `PREPARED` activation identity；此时
+`activation/prepare` 在新建时写入并返回 `PREPARED` activation identity；此时
 `walOnlyPublicationEnabled`、`asyncPublicationEnabled`、
 `syncPublicationEnabled` 和 `ledgerDeletionEnabled` 必须仍为 `false`。
-只有紧接着的 `activation/publications` 成功响应才允许要求这些 capability
-为 `true`。脚本不能把 prepare 的中间态误判成失败，也不能跳过 publications
-直接执行 backfill。
+如果控制进程在 `activation/publications` CAS 已成功后中断，服务端会按幂等
+语义返回已有的 `ACTIVE` record；脚本可以接受这一恢复态，但仍必须执行
+`activation/publications`，用本次 readiness 完成重绑定并校验 ACTIVE 响应，
+然后才能执行 backfill。脚本不能把 PREPARED 中间态直接当成已激活，也不能
+跳过 publications 直接执行 backfill。
 
 即使重启前后 broker 集合表面上未变化，两类 readiness 的 hash domain 也不同，
 所以 post-restart reconciliation 是强制步骤，不是条件分支。
