@@ -737,8 +737,10 @@ if [[ "${stage}" != "A" ]]; then
     die "Nereus BookKeeper bootstrap Job was not rendered"
   fi
   jq -e \
+    --argjson allowVerify "${resume}" \
     --arg cluster "${cluster}" \
-    '.command == "bookkeeper namespace ensure"
+    '((.command == "bookkeeper namespace ensure")
+      or ($allowVerify and .command == "bookkeeper namespace verify"))
       and .status == "ACTIVE"
       and .cluster == $cluster
       and .metadataVersion >= 0
