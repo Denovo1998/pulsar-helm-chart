@@ -968,6 +968,9 @@ NEREUS_RESUME_RUN_STAMP='20260803T000000Z' \
 `--resume` 只接受已存在且 annotation 完全匹配的 release，跳过 Helm install/
 upgrade，仅重新收集部署证据、创建本轮 tenant/namespace/topic 并生成新的
 `run.env`/`latest.env`；正常的冷启动仍必须先执行 reset，不能用该模式绕过冷重置。
+如果 Nereus bootstrap Job 已因 `ttlSecondsAfterFinished` 被清理，恢复模式会
+改用 Ready Broker 的 `wait-nereus-bookkeeper-namespace` initContainer 日志，
+并保存来源标记；普通冷启动仍要求直接保存 bootstrap Job 的 termination evidence。
 
 部署脚本会在 Helm install 前检查 Nereus admin 和 Broker ConfigMap 中的
 long-valued BookKeeper properties 不得被渲染成科学计数法；如果该门禁失败，

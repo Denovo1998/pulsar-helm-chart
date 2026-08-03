@@ -2864,7 +2864,10 @@ ModularLoadManagerImpl”的 Helm 校验。
 部署脚本允许显式的 `--resume` 收尾模式。该模式只接受 live release 的 stage
 和 managed-ledger storage class annotation 与请求完全匹配的情况，跳过 Helm
 install/upgrade，仅重新完成 readiness、初始化身份、运行证据和 `run.env` 写入；
-它不是在线切换 profile 或绕过冷重置的通用入口。
+它不是在线切换 profile 或绕过冷重置的通用入口。如果 bootstrap Job 已被
+`ttlSecondsAfterFinished` 清理，恢复模式可以从 Ready Broker 的
+`wait-nereus-bookkeeper-namespace` initContainer 日志恢复并校验同一份 namespace
+verify JSON，同时记录 evidence source；普通冷启动仍优先使用 Job termination log。
 
 `reset-nereus-benchmark-stage.sh` 必须：
 

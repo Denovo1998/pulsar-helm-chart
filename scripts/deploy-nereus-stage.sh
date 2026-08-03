@@ -707,21 +707,35 @@ if [[ "${stage}" != "A" ]]; then
     -o name \
     | sed -n "s#^job.batch/\\(${release}-nereus-bk-bootstrap-[a-f0-9]\\{8\\}\\)\$#\\1#p" \
     | tail -n 1)"
-  [[ -n "${bootstrap_job}" ]] \
-    || die "Nereus BookKeeper bootstrap Job was not rendered"
-  wait_job "${bootstrap_job}"
-  bootstrap_pod_json="$(kubectl -n "${namespace}" get pods \
-    -l "job-name=${bootstrap_job}" -o json)"
-  jq -er '
-    [.items[]
-      | .status.containerStatuses[]?
-      | select(.name == "bootstrap")
-      | .state.terminated.message]
-    | map(select(. != null and . != ""))
-    | last
-  ' <<<"${bootstrap_pod_json}" \
-    > "${run_dir}/bookkeeper-namespace-bootstrap.json" \
-    || die "BookKeeper bootstrap Job has no termination evidence"
+  if [[ -n "${bootstrap_job}" ]]; then
+    wait_job "${bootstrap_job}"
+    bootstrap_pod_json="$(kubectl -n "${namespace}" get pods \
+      -l "job-name=${bootstrap_job}" -o json)"
+    jq -er '
+      [.items[]
+        | .status.containerStatuses[]?
+        | select(.name == "bootstrap")
+        | .state.terminated.message]
+      | map(select(. != null and . != ""))
+      | last
+    ' <<<"${bootstrap_pod_json}" \
+      > "${run_dir}/bookkeeper-namespace-bootstrap.json" \
+      || die "BookKeeper bootstrap Job has no termination evidence"
+  elif [[ "${resume}" == true ]]; then
+    broker_pod="$(kubectl -n "${namespace}" get pods \
+      -l "release=${release},component=broker" \
+      -o jsonpath='{.items[0].metadata.name}')"
+    [[ -n "${broker_pod}" ]] \
+      || die "resumed release has no Broker Pod for bootstrap evidence fallback"
+    kubectl -n "${namespace}" logs "${broker_pod}" \
+      -c wait-nereus-bookkeeper-namespace \
+      | awk '/^\{/{capture=1} capture {print}' \
+      > "${run_dir}/bookkeeper-namespace-bootstrap.json"
+    printf '%s\n' 'bootstrap-evidence-source=broker-init-log' \
+      > "${run_dir}/bookkeeper-namespace-bootstrap-source.txt"
+  else
+    die "Nereus BookKeeper bootstrap Job was not rendered"
+  fi
   jq -e \
     --arg cluster "${cluster}" \
     '.command == "bookkeeper namespace ensure"
