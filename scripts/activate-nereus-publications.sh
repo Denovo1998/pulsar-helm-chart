@@ -289,9 +289,11 @@ ensure_smoke_topic() {
   die "smoke topic could not be created or read: ${BENCHMARK_TOPIC}"
 }
 
-ensure_smoke_topic
-pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
-  > "${activation_dir}/smoke-topic-stats.json"
+if [[ "${stage}" == "A" || "${stage}" == "B" ]]; then
+  ensure_smoke_topic
+  pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
+    > "${activation_dir}/smoke-topic-stats.json"
+fi
 
 echo "stage ${stage} publication and generation activation is complete"
 echo "evidence: ${activation_dir}"

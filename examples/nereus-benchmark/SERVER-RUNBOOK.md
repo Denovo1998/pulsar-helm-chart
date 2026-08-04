@@ -991,8 +991,9 @@ generation backfill。
 readiness，不能把两个 readiness domain 混用。
 当前 benchmark values 保留 Pulsar 的 inactive-topic cleanup：空 topic 在无
 subscription 时可能于 60 秒后被删除。因此 A/B 部署阶段保存的初始 stock
-smoke-topic stats 只是部署证据；activation 和 release verification 会在各自
-最终 stats 采集前幂等 ensure 该 topic。遇到 `Topic ... not found` 时，应先确认
+smoke-topic stats 只是部署证据；B activation 和 A/B release verification 会
+在最终 stats 采集前幂等 ensure 该 topic。C–E 不创建 stock smoke topic，正式
+workload 会创建自己的 topic。遇到 A/B 的 `Topic ... not found` 时，应先确认
 运行的是已同步的本地脚本版本，不要把它归因于 Oxia 或 BookKeeper 元数据丢失。
 
 对应关系：

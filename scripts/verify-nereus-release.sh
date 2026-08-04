@@ -345,9 +345,11 @@ ensure_smoke_topic() {
   die "smoke topic could not be created or read: ${BENCHMARK_TOPIC}"
 }
 
-ensure_smoke_topic
-pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
-  > "${verification_dir}/smoke-topic-stats.json"
+if [[ "${stage}" == "A" || "${stage}" == "B" ]]; then
+  ensure_smoke_topic
+  pulsar_admin topics stats "${BENCHMARK_TOPIC}" \
+    > "${verification_dir}/smoke-topic-stats.json"
+fi
 kubectl -n "${namespace}" get pods \
   -l "release=${release}" -o wide \
   > "${verification_dir}/pods.txt"
