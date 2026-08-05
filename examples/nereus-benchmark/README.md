@@ -47,10 +47,13 @@ Both `ModularLoadManagerImpl` and `ExtensibleLoadManagerImpl` are supported
 with Oxia. The common benchmark values select `ModularLoadManagerImpl`; the
 Chart does not reject either implementation.
 
-`values-common.yaml` is a complete snapshot of the chart's `values.yaml` with
-the benchmark overrides applied. This keeps the A-E control plane explicit;
-when chart defaults change, regenerate the snapshot before changing the
-benchmark source identity.
+`values-common.yaml` is maintained from the complete text of the chart's
+`values.yaml`, including comments and optional configuration examples, with
+the benchmark overrides applied in place. This keeps the A-E control plane
+explicit. When chart defaults change, copy the new chart values first, reapply
+the benchmark-only differences, and update the recorded source checksum.
+`scripts/test-nereus-render.sh` rejects a stale source checksum or a missing
+chart values path.
 
 ## Frozen Source Identities
 

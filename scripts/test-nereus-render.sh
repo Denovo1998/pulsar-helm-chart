@@ -24,18 +24,74 @@ die() {
   exit 1
 }
 
+sha256_file() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
+  else
+    shasum -a 256 "$1" | awk '{print $1}'
+  fi
+}
+
+extract_yaml_mapping_paths() {
+  awk '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ {
+      next
+    }
+    !/^[ ]*[A-Za-z0-9_.-]+:/ {
+      next
+    }
+    {
+      line = $0
+      match(line, /[^ ]/)
+      depth = int((RSTART - 1) / 2)
+      key = line
+      sub(/^[ ]*/, "", key)
+      sub(/:.*/, "", key)
+      stack[depth] = key
+      for (level = depth + 1; level <= max_depth; level++) {
+        delete stack[level]
+      }
+      max_depth = depth
+      path = ""
+      for (level = 0; level <= depth; level++) {
+        if (level in stack) {
+          path = path == "" ? stack[level] : path "." stack[level]
+        }
+      }
+      print path
+    }
+  ' "$1" | sort -u
+}
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "${script_dir}/.." && pwd)"
 chart="${repo_root}/charts/pulsar"
 common="${repo_root}/examples/nereus-benchmark/values-common.yaml"
+chart_values="${chart}/values.yaml"
 expected_apache_image="$(sed -n 's/^defaultPulsarImageTag: //p' "${common}")"
 expected_nereus_image="$(sed -n 's/^    tag: //p' "${repo_root}/examples/nereus-benchmark/values-stage-b-dormant.yaml")"
-expected_admin_image="$(sed -n 's/^      tag: //p' "${common}")"
+expected_admin_image="$(sed -n 's/^      tag: //p' "${common}" | tr -d '\"')"
 [[ -n "${expected_apache_image}" && -n "${expected_nereus_image}" \
     && -n "${expected_admin_image}" ]] \
   || die "benchmark image defaults are incomplete"
 temporary_dir="$(mktemp -d "${TMPDIR:-/tmp}/nereus-render.XXXXXX")"
 trap 'rm -rf "${temporary_dir}"' EXIT
+expected_chart_values_sha="$(sed -n 's/^# Source values SHA-256: //p' "${common}")"
+actual_chart_values_sha="$(sha256_file "${chart_values}")"
+[[ -n "${expected_chart_values_sha}" ]] \
+  || die "values-common.yaml does not record its charts/pulsar/values.yaml source checksum"
+[[ "${expected_chart_values_sha}" == "${actual_chart_values_sha}" ]] \
+  || die "values-common.yaml is stale relative to charts/pulsar/values.yaml"
+extract_yaml_mapping_paths "${chart_values}" > "${temporary_dir}/chart-values.keys"
+extract_yaml_mapping_paths "${common}" > "${temporary_dir}/common-values.keys"
+comm -23 \
+  "${temporary_dir}/chart-values.keys" \
+  "${temporary_dir}/common-values.keys" \
+  > "${temporary_dir}/missing-common-values.keys"
+if [[ -s "${temporary_dir}/missing-common-values.keys" ]]; then
+  sed -n '1,20p' "${temporary_dir}/missing-common-values.keys" >&2
+  die "values-common.yaml is missing chart values paths"
+fi
 positive_identity_args=(
   --set-string "nereus.bookkeeperWal.providerScopeSha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   --set-string "nereus.bookkeeperWal.ledgerIdNamespaceReservationId=11111111-1111-4111-8111-111111111111"
