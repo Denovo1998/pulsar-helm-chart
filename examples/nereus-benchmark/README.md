@@ -44,8 +44,8 @@ though both use the `BOOKKEEPER_WAL_ONLY` profile: B routes topics through the
 stock `bookkeeper` storage class; C routes them through `nereus`.
 
 Both `ModularLoadManagerImpl` and `ExtensibleLoadManagerImpl` are supported
-with Oxia. The common values select Extensible only to keep the benchmark
-variable fixed; the Chart does not reject either implementation.
+with Oxia. The common benchmark values select `ModularLoadManagerImpl`; the
+Chart does not reject either implementation.
 
 ## Frozen Source Identities
 

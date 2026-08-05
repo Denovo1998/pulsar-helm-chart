@@ -121,7 +121,7 @@ broker:
     interval: 5s
     scrapeTimeout: 4s
   configData:
-    loadManagerClassName: "org.apache.pulsar.broker.loadbalance.extensions.ExtensibleLoadManagerImpl"
+    loadManagerClassName: "org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl"
     # OMB does not exercise per-topic policies. Keep this optional Pulsar
     # system-topic path out of the A-E benchmark control plane: on the
     # Pulsar 5.0.0-M1 baseline, an empty __change_events reader can block
