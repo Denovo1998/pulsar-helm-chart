@@ -47,6 +47,11 @@ Both `ModularLoadManagerImpl` and `ExtensibleLoadManagerImpl` are supported
 with Oxia. The common benchmark values select `ModularLoadManagerImpl`; the
 Chart does not reject either implementation.
 
+`values-common.yaml` is a complete snapshot of the chart's `values.yaml` with
+the benchmark overrides applied. This keeps the A-E control plane explicit;
+when chart defaults change, regenerate the snapshot before changing the
+benchmark source identity.
+
 ## Frozen Source Identities
 
 - Apache Pulsar: `8dae0236c0a0d405ed7f8303081080520fe91551`;

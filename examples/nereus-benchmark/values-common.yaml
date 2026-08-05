@@ -15,33 +15,54 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# Nereus v0.1.0 Benchmark - Common Values
-# Applied first for all A-E stages.
+# Nereus v0.1.0 Benchmark - Complete Common Values Snapshot
+#
+# This file contains the full chart values surface, with the benchmark
+# overrides applied. It is generated from charts/pulsar/values.yaml as the
+# reference baseline; keep it synchronized when the chart defaults change.
+# Stage files override only the A-E differences.
 
-# Leave empty so .Release.Namespace (and deploy-nereus-stage.sh's explicit
-# namespace override) is authoritative.
-namespace: ""
-clusterName: beijing-1
+namespace: ''
+namespaceCreate: false
+clusterDomain: cluster.local
 initialize: true
-
+useReleaseStatus: true
+clusterName: beijing-1
+podMonitor:
+  customLabels: {}
+metadataPrefix: ''
+tcpPrefix: ''
+tlsPrefix: ''
+persistence: true
+volumes:
+  persistence: true
+  local_storage: true
+rbac:
+  enabled: false
+  limit_to_namespace: true
+affinity:
+  anti_affinity: false
+  type: requiredDuringSchedulingIgnoredDuringExecution
 components:
   zookeeper: false
   oxia: true
   bookkeeper: true
   autorecovery: true
   broker: true
+  functions: false
+  function_worker: false
   proxy: false
   toolset: true
-
+  pulsar_manager: false
+  dekaf: false
 defaultPulsarImageRepository: nereus-benchmark/pulsar
 defaultPulsarImageTag: 5.0.0-m1-apache-p8dae0236-amd64
 defaultPullPolicy: Never
-
 images:
-  oxia:
-    repository: oxia/oxia
-    tag: 0.16.7
-    pullPolicy: Never
+  zookeeper:
+    repository:
+    tag:
+    pullPolicy:
   bookie:
     repository: nereus-benchmark/pulsar
     tag: 5.0.0-m1-apache-p8dae0236-amd64
@@ -50,36 +71,289 @@ images:
     repository: nereus-benchmark/pulsar
     tag: 5.0.0-m1-apache-p8dae0236-amd64
     pullPolicy: Never
+  broker:
+    repository:
+    tag:
+    pullPolicy:
   toolset:
     repository: nereus-benchmark/pulsar
     tag: 5.0.0-m1-apache-p8dae0236-amd64
     pullPolicy: Never
-
+  proxy:
+    repository:
+    tag:
+    pullPolicy:
+  functions:
+    repository:
+    tag:
+    pullPolicy:
+  function_worker:
+    repository:
+    tag:
+    pullPolicy:
+  pulsar_manager:
+    repository: apachepulsar/pulsar-manager
+    tag: v0.4.0
+    pullPolicy:
+    hasCommand: false
+  dekaf:
+    repository: visortelle/dekaf
+    tag: 1.1.0
+    pullPolicy:
+  oxia:
+    repository: oxia/oxia
+    tag: 0.16.7
+    pullPolicy: Never
+  standalone:
+    repository:
+    tag:
+    pullPolicy:
+  kubectl:
+    repository: alpine/k8s
+    tag: 1.32.12
+    pullPolicy:
+tls:
+  enabled: false
+  ca_suffix: ca-tls
+  common:
+    duration: 2160h
+    renewBefore: 360h
+    organization:
+    - pulsar
+    keySize: 4096
+    keyAlgorithm: RSA
+    keyEncoding: PKCS8
+  proxy:
+    enabled: false
+    cert_name: tls-proxy
+    createCert: true
+    dnsNames:
+    ipAddresses:
+    cacerts:
+      enabled: false
+      certs:
+  broker:
+    enabled: false
+    cert_name: tls-broker
+    dnsNames:
+    ipAddresses:
+    cacerts:
+      enabled: false
+      certs:
+  bookie:
+    enabled: false
+    cert_name: tls-bookie
+    cacerts:
+      enabled: false
+      certs:
+  zookeeper:
+    enabled: false
+    cert_name: tls-zookeeper
+    cacerts:
+      enabled: false
+      certs:
+  autorecovery:
+    cert_name: tls-recovery
+    cacerts:
+      enabled: false
+      certs:
+  toolset:
+    cert_name: tls-toolset
+    cacerts:
+      enabled: false
+      certs:
+  standalone:
+    cert_name: tls-standalone
+  function_instance:
+    enabled: false
+  function_worker:
+    enabled: false
+    cert_name: tls-function-worker
+    createCert: true
+    dnsNames:
+    ipAddresses:
+    cacerts:
+      enabled: false
+      certs:
+  oxia:
+    enabled: false
+  pulsar_metadata:
+    cacerts:
+      enabled: false
+      certs:
+auth:
+  authentication:
+    enabled: false
+    jwt:
+      enabled: false
+      usingSecretKey: false
+      generateSecrets:
+        enabled: false
+        tolerations: []
+        affinity:
+          anti_affinity: false
+          anti_affinity_topology_key: kubernetes.io/hostname
+          type: preferredDuringSchedulingIgnoredDuringExecution
+      secretAnnotations:
+        key: {}
+        token: {}
+    openid:
+      enabled: false
+      openIDAllowedTokenIssuers: []
+      openIDAllowedAudiences: []
+      openIDTokenIssuerTrustCertsFilePath:
+      openIDRoleClaim:
+      openIDAcceptedTimeLeewaySeconds: '0'
+      openIDCacheSize: '5'
+      openIDCacheRefreshAfterWriteSeconds: '64800'
+      openIDCacheExpirationSeconds: '86400'
+      openIDHttpConnectionTimeoutMillis: '10000'
+      openIDHttpReadTimeoutMillis: '10000'
+      openIDKeyIdCacheMissRefreshSeconds: '300'
+      openIDRequireIssuersUseHttps: 'true'
+      openIDFallbackDiscoveryMode: DISABLED
+  authorization:
+    enabled: false
+  superUsers:
+    broker: broker-admin
+    proxy: proxy-admin
+    client: admin
+    manager: ''
+  useProxyRoles: true
+certs:
+  internal_issuer:
+    apiVersion: cert-manager.io/v1
+    enabled: false
+    component: internal-cert-issuer
+    type: selfsigning
+    duration: 2160h
+    renewBefore: 360h
+    privateKey:
+      rotationPolicy: Never
+  issuers:
+    selfsigning:
+      name:
+      secretName:
+    ca:
+      name:
+      secretName:
+      kind: Issuer
+      group: cert-manager.io
+zookeeper:
+  component: zookeeper
+  replicaCount: 3
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: Parallel
+  initContainers: []
+  podMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 60s
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
+  ports:
+    http: 8000
+    client: 2181
+    clientTls: 2281
+    follower: 2888
+    leaderElection: 3888
+  nodeSelector:
+    workload: pulsar
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 20
+      periodSeconds: 30
+      timeoutSeconds: 30
+    readiness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 20
+      periodSeconds: 30
+      timeoutSeconds: 30
+    startup:
+      enabled: false
+      failureThreshold: 30
+      initialDelaySeconds: 20
+      periodSeconds: 30
+      timeoutSeconds: 30
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: requiredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  resources:
+    requests:
+      memory: 2Gi
+      cpu: 2
+    limits:
+      memory: 2304Mi
+      cpu: 2
+  extraVolumes: []
+  extraVolumeMounts: []
+  securityContext:
+    fsGroup: 0
+    fsGroupChangePolicy: OnRootMismatch
+  volumes:
+    useSeparateDiskForTxlog: false
+    persistence: true
+    data:
+      name: data
+      size: 47Gi
+      local_storage: true
+      storageClassName: local-zk
+      selector: {}
+    datalog:
+      name: datalog
+      size: 47Gi
+      local_storage: true
+      storageClassName: local-zk
+      selector: {}
+  externalZookeeperServerList: ''
+  service_account:
+    annotations: {}
+  configData:
+    PULSAR_MEM: "-Xms2048m -Xmx2048m\n"
+    PULSAR_GC: "-XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages
+      -XX:+ExitOnOutOfMemoryError -XX:+DisableExplicitGC -XX:+PerfDisableSharedMem\n"
+  additionalCommand:
+  service:
+    annotations: {}
+  headlessService:
+    annotations: {}
+  statefulsetUpgrade:
+    enabled: true
+  pdb:
+    usePolicy: true
+    maxUnavailable: 1
 oxia:
+  component: oxia
   initialShardCount: 3
   replicationFactor: 3
   extraNamespaces:
-    - name: nereus
-      initialShardCount: 3
-      replicationFactor: 3
+  - name: nereus
+    initialShardCount: 3
+    replicationFactor: 3
   coordinator:
-    nodeSelector:
-      workload: pulsar
-    resources:
-      requests:
-        memory: 2Gi
-        cpu: 2
-      limits:
-        memory: 2304Mi
-        cpu: 2
+    appAnnotations: {}
+    annotations: {}
     podMonitor:
       enabled: true
       interval: 5s
       scrapeTimeout: 4s
-  server:
-    replicas: 3
-    nodeSelector:
-      workload: pulsar
+      metricRelabelings:
+    cpuLimit: 100m
+    memoryLimit: 128Mi
     resources:
       requests:
         memory: 2Gi
@@ -87,81 +361,605 @@ oxia:
       limits:
         memory: 2304Mi
         cpu: 2
+    ports:
+      internal: 6649
+      metrics: 8080
+    service:
+      annotations: {}
+    service_account:
+      annotations: {}
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+    nodeSelector:
+      workload: pulsar
+    extraContainers: []
+    extraVolumes: []
+    extraVolumeMounts: []
+    allowExtraAuthorities: []
+  server:
+    appAnnotations: {}
+    annotations: {}
+    podMonitor:
+      enabled: true
+      interval: 5s
+      scrapeTimeout: 4s
+      metricRelabelings:
+    replicas: 3
+    cpuLimit: 1
+    memoryLimit: 1Gi
+    resources:
+      requests:
+        memory: 2Gi
+        cpu: 2
+      limits:
+        memory: 2304Mi
+        cpu: 2
+    dbCacheSizeMb: 512
+    walSyncData: 'true'
     storageSize: 47Gi
     local_storage: true
+    ports:
+      public: 6648
+      internal: 6649
+      metrics: 8080
+    service:
+      public:
+        annotations: {}
+      internal:
+        annotations: {}
+    service_account:
+      annotations: {}
+    securityContext:
+      fsGroup: 0
+      fsGroupChangePolicy: OnRootMismatch
+    affinity:
+      anti_affinity: false
+      anti_affinity_topology_key: kubernetes.io/hostname
+      type: requiredDuringSchedulingIgnoredDuringExecution
+    topologySpreadConstraints: []
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+    nodeSelector:
+      workload: pulsar
     storageClassName: local-zk
-    podMonitor:
-      enabled: true
-      interval: 5s
-      scrapeTimeout: 4s
-
+  pprofEnabled: false
 bookkeeper:
+  component: bookie
+  metadata:
+    waitZookeeperTimeout: 600
+    initTimeout: 60
+    waitOxiaTimeout: 600
+    resources:
   replicaCount: 4
-  nodeSelector:
-    workload: pulsar
+  updateStrategy:
+    type: RollingUpdate
+  podManagementPolicy: Parallel
+  initContainers: []
   podMonitor:
     enabled: true
     interval: 5s
     scrapeTimeout: 4s
-
-autorecovery:
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
+  ports:
+    http: 8000
+    bookie: 3181
+    statestore: 4181
   nodeSelector:
     workload: pulsar
-
-pulsar_metadata:
-  nodeSelector:
-    workload: pulsar
-
-broker:
-  replicaCount: 3
-  nodeSelector:
-    workload: pulsar
-  podMonitor:
-    enabled: true
-    interval: 5s
-    scrapeTimeout: 4s
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 60
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 5
+    readiness:
+      enabled: true
+      failureThreshold: 60
+      initialDelaySeconds: 10
+      periodSeconds: 30
+      timeoutSeconds: 5
+    startup:
+      enabled: false
+      failureThreshold: 30
+      initialDelaySeconds: 60
+      periodSeconds: 30
+      timeoutSeconds: 5
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: requiredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  waitMetadataTimeout: 600
+  resources:
+    requests:
+      memory: 12Gi
+      cpu: 4
+    limits:
+      memory: 12Gi
+      cpu: 4
+  extraVolumes: []
+  extraVolumeMounts: []
+  securityContext:
+    fsGroup: 0
+    fsGroupChangePolicy: OnRootMismatch
+  volumes:
+    persistence: true
+    journal:
+      name: journal
+      size: 100Gi
+      local_storage: true
+      storageClassName: local-journal-1
+      selector: {}
+      useMultiVolumes: false
+      multiVolumes:
+      - name: journal0
+        size: 10Gi
+        storageClassName: local-journal-1
+        mountPath: "/pulsar/data/bookkeeper/journal0"
+      - name: journal1
+        size: 10Gi
+        storageClassName: local-journal-1
+        mountPath: "/pulsar/data/bookkeeper/journal1"
+    ledgers:
+      name: ledgers
+      size: 520Gi
+      local_storage: true
+      storageClassName: local-ledger
+      useMultiVolumes: false
+      multiVolumes:
+      - name: ledgers0
+        size: 10Gi
+        mountPath: "/pulsar/data/bookkeeper/ledgers0"
+      - name: ledgers1
+        size: 10Gi
+        mountPath: "/pulsar/data/bookkeeper/ledgers1"
+    index:
+      enabled: true
+      name: index
+      size: 60Gi
+      local_storage: true
+      storageClassName: local-bookie-index
+      mountPath: "/pulsar/data/bookkeeper/index"
+    useSingleCommonVolume: false
+    common:
+      name: common
+      size: 60Gi
+      local_storage: true
+  indexDirectories: "/pulsar/data/bookkeeper/index"
+  service_account:
+    annotations: {}
   configData:
-    loadManagerClassName: "org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl"
-    # OMB does not exercise per-topic policies. Keep this optional Pulsar
-    # system-topic path out of the A-E benchmark control plane: on the
-    # Pulsar 5.0.0-M1 baseline, an empty __change_events reader can block
-    # topic loading after a Broker restart.
-    topicLevelPoliciesEnabled: "false"
-    managedLedgerDefaultEnsembleSize: "3"
-    managedLedgerDefaultWriteQuorum: "3"
-    managedLedgerDefaultAckQuorum: "2"
-
+    PULSAR_MEM: "-Xms3g -Xmx3g -XX:MaxDirectMemorySize=8g\n"
+    PULSAR_GC: "-XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages
+      -XX:+ExitOnOutOfMemoryError -XX:+DisableExplicitGC -XX:+PerfDisableSharedMem\n"
+    dbStorage_writeCacheMaxSizeMb: '3072'
+    dbStorage_readAheadCacheMaxSizeMb: '1024'
+    minorCompactionThreshold: '0.2'
+    minorCompactionInterval: '360'
+    majorCompactionThreshold: '0.8'
+    majorCompactionInterval: '10800'
+    gcWaitTime: '300000'
+    isForceGCAllowWhenNoSpace: 'true'
+    PULSAR_PREFIX_entryLocationCompactionInterval: '86400'
+    diskUsageLwmThreshold: '0.85'
+    diskUsageWarnThreshold: '0.9'
+    diskUsageThreshold: '0.95'
+    diskCheckInterval: '10000'
+    dbStorage_directIOEntryLogger: 'true'
+    dbStorage_directIOEntryLoggerTotalWriteBufferSizeMB: '1048'
+    dbStorage_directIOEntryLoggerTotalReadBufferSizeMB: '256'
+    journalWriteData: 'true'
+    journalSyncData: 'true'
+    journalAdaptiveGroupWrites: 'true'
+    journalMaxGroupWaitMSec: '1'
+    journalBufferedWritesThreshold: '2097152'
+    journalAlignmentSize: '512'
+    journalWriteBufferSizeKB: '256'
+    journalFlushWhenQueueEmpty: 'false'
+    numJournalCallbackThreads: '4'
+    journalPreAllocSizeMB: '64'
+    flushEntrylogBytes: '67108864'
+    numAddWorkerThreads: '4'
+  additionalCommand:
+  service:
+    spec:
+      publishNotReadyAddresses: true
+  pdb:
+    usePolicy: true
+    maxUnavailable: 1
+autorecovery:
+  component: recovery
+  replicaCount: 1
+  initContainers: []
+  podMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 60s
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
+  ports:
+    http: 8000
+  nodeSelector:
+    workload: pulsar
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: requiredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  waitBookkeeperTimeout: 120
+  resources:
+    requests:
+      memory: 1024Mi
+      cpu: 1
+    limits:
+      memory: 1280Mi
+      cpu: 1
+  service:
+    annotations: {}
+  service_account:
+    annotations: {}
+  configData:
+    BOOKIE_MEM: "-Xms1024m -Xmx1024m\n"
+    PULSAR_PREFIX_useV2WireProtocol: 'true'
+  extraVolumes: []
+  initContainersExtraVolumeMounts: []
+  extraVolumeMounts: []
+pulsar_metadata:
+  component: pulsar-init
+  image:
+    repository:
+    tag:
+    pullPolicy:
+  configurationStoreMetadataPrefix: ''
+  configurationStorePort: 2181
+  waitZookeeperTimeout: 600
+  waitOxiaTimeout: 600
+  waitBookkeeperTimeout: 120
+  initTimeout: 60
+  metadataStoreAllowReadOnlyOperations: false
+  metadataStoreSessionTimeoutMillis: 30000
+  metadataStoreOperationTimeoutSeconds: 30
+  metadataStoreCacheExpirySeconds: 300
+  metadataStoreBatchingEnabled: true
+  metadataStoreBatchingMaxDelayMillis: 5
+  metadataStoreBatchingMaxOperations: 1000
+  metadataStoreBatchingMaxSizeKb: 128
+  bookkeeper:
+    usePulsarMetadataClientDriver: false
+    usePulsarMetadataBookieDriver: false
+    metadataStoreSessionTimeoutMillis: 30000
+  resources:
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  nodeSelector:
+    workload: pulsar
+extraInitCommand: ''
+standalone:
+  enabled: false
+  component: standalone
+  initContainers: []
+  podMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 60s
+  restartPodsOnConfigMapChange: false
+  ports:
+    http: 8080
+    https: 8443
+    pulsar: 6650
+    pulsarssl: 6651
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    readiness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    startup:
+      enabled: true
+      failureThreshold: 30
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: preferredDuringSchedulingIgnoredDuringExecution
+  appAnnotations: {}
+  annotations: {}
+  tolerations: []
+  gracePeriod: 30
+  resources:
+    requests:
+      memory: 1Gi
+      cpu: 0.5
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraEnvs: []
+  service:
+    annotations: {}
+    type: ClusterIP
+  service_account:
+    annotations: {}
+  additionalCommand: ''
+  volumes:
+    data:
+      name: data
+      size: 10Gi
+      selector: {}
+  configData:
+    PULSAR_MEM: "-Xms256m -Xmx512m -XX:MaxDirectMemorySize=512m\n"
+    PULSAR_GC: "-XX:+UseG1GC -XX:MaxGCPauseMillis=10\n"
+broker:
+  component: broker
+  replicaCount: 3
+  securityContext:
+    fsGroup: 0
+    fsGroupChangePolicy: OnRootMismatch
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    metrics:
+    behavior:
+  podManagementPolicy:
+  updateStrategy:
+    type: RollingUpdate
+  initContainers: []
+  podMonitor:
+    enabled: true
+    interval: 5s
+    scrapeTimeout: 4s
+    dropUnderscoreCreatedMetrics:
+      enabled: true
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
+  ports:
+    http: 8080
+    https: 8443
+    pulsar: 6650
+    pulsarssl: 6651
+  nodeSelector:
+    workload: pulsar
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    readiness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    startup:
+      enabled: false
+      failureThreshold: 30
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: preferredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  waitZookeeperTimeout: 600
+  waitOxiaTimeout: 600
+  waitBookkeeperTimeout: 120
+  resources:
+    requests:
+      memory: 8Gi
+      cpu: 4
+    limits:
+      memory: 8448Mi
+      cpu: 4
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraEnvs: []
+  configData:
+    PULSAR_MEM: "-Xms3g -Xmx3g -XX:MaxDirectMemorySize=3g\n"
+    PULSAR_GC: "-XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages
+      -XX:+ExitOnOutOfMemoryError -XX:+DisableExplicitGC -XX:+PerfDisableSharedMem\n"
+    managedLedgerDefaultEnsembleSize: '3'
+    managedLedgerDefaultWriteQuorum: '3'
+    managedLedgerDefaultAckQuorum: '2'
+    transactionCoordinatorEnabled: 'false'
+    delayedDeliveryEnabled: 'true'
+    delayedDeliveryTrackerFactoryClassName: org.apache.pulsar.broker.delayed.BucketDelayedDeliveryTrackerFactory
+    acknowledgmentAtBatchIndexLevelEnabled: 'true'
+    preciseDispatcherFlowControl: 'false'
+    preciseTopicPublishRateLimiterEnable: 'true'
+    bookkeeperClientSpeculativeReadTimeoutInMillis: '2000'
+    loadManagerClassName: org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl
+    loadBalancerLoadSheddingStrategy: org.apache.pulsar.broker.loadbalance.extensions.scheduler.TransferShedder
+    loadBalancerDebugModeEnabled: 'false'
+    loadBalancerBrokerLoadTargetStd: '0.1'
+    managedLedgerCursorMaxEntriesPerLedger: '200000'
+    managedLedgerMaxEntriesPerLedger: '1000000'
+    managedCursorInfoCompressionType: LZ4
+    managedLedgerInfoCompressionType: LZ4
+    topicLevelPoliciesEnabled: 'false'
+  additionalCommand:
+  service:
+    clusterIP: None
+    annotations: {}
+  headlessService:
+    annotations: {}
+  statefulsetUpgrade:
+    enabled: true
+  pdb:
+    usePolicy: true
+    maxUnavailable: 1
+  service_account:
+    annotations: {}
+  packageManagement:
+    enabled: false
+    fileSystemStorage:
+      enabled: false
+      storagePath: "/pulsar/packages-storage"
+      claimName: pulsar-broker-package-storage
+      storageClass: {}
+      persistentVolume: {}
+      persistentVolumeClaim:
+        metadata:
+          name: pulsar-broker-package-storage
+        spec:
+          accessModes:
+          - ReadWriteOnce
+          resources:
+            requests:
+              storage: 10Gi
+  storageOffload: {}
 nereus:
+  enabled: false
+  managedLedgerStorageClassName: org.apache.pulsar.broker.storage.nereus.NereusManagedLedgerStorage
+  runtimeProviderClassName: com.nereusstream.pulsar.DefaultNereusRuntimeProvider
+  defaultStorageProfile: BOOKKEEPER_WAL_ONLY
+  configData: {}
+  oxia:
+    serviceAddress: ''
+    namespace: nereus
   secrets:
+    resolverClassName: com.nereusstream.objectstore.EnvironmentObjectStoreSecretResolver
     existingSecret: pulsar-nereus-secrets
+    accessKeyKey: access-key
+    secretKeyKey: secret-key
+    sessionTokenKey: ''
+    bookKeeperPasswordKey: bookkeeper-password
+    accessKeyReference: NEREUS_S3_ACCESS_KEY
+    secretKeyReference: NEREUS_S3_SECRET_KEY
+    sessionTokenReference: ''
+    bookKeeperPasswordReference: NEREUS_BK_PASSWORD
   objectStore:
+    providerClassName: com.nereusstream.objectstore.S3CompatibleObjectStoreProvider
+    endpoint: ''
     region: us-east-1
     bucket: nereus-benchmark
     prefix: v0.1.0
     pathStyleAccess: true
+    requestTimeoutSeconds: 30
+    maxConnections: 64
     seaweedfs:
       enabled: true
+      component: seaweedfs
       image:
         repository: nereus-benchmark/seaweedfs
         tag: 4.29-amd64
         pullPolicy: Never
+      replicaCount: 1
+      command:
+      - weed
+      args:
+      - mini
+      - "-dir=/data"
+      - "-ip.bind=0.0.0.0"
+      - "-metricsPort=9327"
+      - "-metricsIp=0.0.0.0"
+      - "-webdav=false"
+      - "-admin.ui=false"
+      - "-s3.port.iceberg=0"
+      - "-master.telemetry=false"
+      - "-master.defaultReplication=000"
+      - "-master.volumeSizeLimitMB=1024"
+      - "-filer.maxMB=64"
+      - "-volume.index=memory"
+      service:
+        type: ClusterIP
+        s3Port: 8333
+        metricsPort: 9327
+        annotations: {}
       nodeSelector:
         workload: apps
-        nereus-object-store: "true"
-      # denovo-win-1 reserves logical CPUs 12-15 (E-Cores) for the system.
-      # With static CPU Manager and full-pcpus-only, cpu=4 gives SeaweedFS
-      # two complete 2-thread P-Cores.
+        nereus-object-store: 'true'
+      tolerations:
+      - key: dedicated
+        operator: Equal
+        value: apps
+        effect: NoSchedule
+      affinity: {}
+      topologySpreadConstraints: []
       resources:
         requests:
-          cpu: "4"
+          cpu: '4'
           memory: 4Gi
         limits:
-          cpu: "4"
+          cpu: '4'
           memory: 4Gi
       persistence:
         enabled: true
+        existingClaim: ''
         storageClassName: local-seaweedfs
+        accessModes:
+        - ReadWriteOnce
         size: 500Gi
+        selector: {}
+      probes:
+        startup:
+          failureThreshold: 90
+          periodSeconds: 2
+          timeoutSeconds: 1
+        readiness:
+          periodSeconds: 5
+          timeoutSeconds: 1
+        liveness:
+          periodSeconds: 10
+          timeoutSeconds: 1
+      podMonitor:
+        enabled: true
+        interval: 5s
+        scrapeTimeout: 4s
+  staging:
+    mountPath: "/pulsar/data/nereus-staging"
+    volume:
+      type: emptyDir
+      emptyDir:
+        medium: ''
+        sizeLimit: 20Gi
+      existingClaim: ''
+      hostPath: ''
   generationProtocol:
     enabled: true
   physicalGc:
@@ -170,75 +968,537 @@ nereus:
   bookkeeperWal:
     enabled: true
     deploymentId: nereus-v010-benchmark
-    providerScopeSha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    providerScopeSha256: '0000000000000000000000000000000000000000000000000000000000000000'
     ledgerIdPrefixBits: 12
     ledgerIdPrefixValue: 2049
-    ledgerIdNamespaceReservationId: "00000000-0000-0000-0000-000000000000"
+    ledgerIdNamespaceReservationId: 00000000-0000-0000-0000-000000000000
     ensembleSize: 3
     writeQuorumSize: 3
     ackQuorumSize: 2
+    digestType: CRC32C
+    passwordIdentityVersion: v1
+    maxEntriesPerLedger: 100000
+    maxBytesPerLedger: 268435456
+    maxAppendRangesPerLedger: 1000
+    protectionSlotsPerRange: 8
+    maxReaderLeasesPerLedger: 64
+    maxUncertainAllocations: 32
+    maxLedgerAgeSeconds: 3600
+    maxWritesInFlight: 1
+    maxReadsInFlight: 64
+    maxReadBytesInFlight: 134217728
+    operationTimeoutSeconds: 30
+    allocationTimeoutSeconds: 20
+    sealTimeoutSeconds: 30
+    deleteTimeoutSeconds: 30
+    readerLeaseSeconds: 120
+    readerLeaseRenewSeconds: 30
+    retentionScanIntervalSeconds: 60
+    retentionScanPageSize: 256
     gc:
       enabled: false
       dryRun: true
+      maxConcurrentDeletes: 1
+      maxClockSkewSeconds: 5
+      drainGraceSeconds: 300
+      lateCreateAuditGraceSeconds: 604800
   admin:
-    nodeSelector:
-      workload: pulsar
     image:
       repository: nereus-benchmark/nereus-admin
       tag: v0.1.0-n20a9f8eb-amd64
       pullPolicy: Never
-    operatorEvidenceSha256: "0000000000000000000000000000000000000000000000000000000000000000"
-
-toolset:
+    timeoutSeconds: 600
+    operatorEvidenceSha256: '0000000000000000000000000000000000000000000000000000000000000000'
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+    resources:
+      requests:
+        cpu: 250m
+        memory: 256Mi
+      limits:
+        cpu: '1'
+        memory: 1Gi
+  bootstrap:
+    enabled: false
+    activeDeadlineSeconds: 900
+    backoffLimit: 4
+    ttlSecondsAfterFinished: 3600
+  brokerWait:
+    objectStore: true
+    bookKeeperNamespace: true
+    timeoutSeconds: 600
+functions:
+  component: functions-worker
+  useBookieAsStateStore: false
+  rbac:
+    limit_to_namespace: true
+  service_account:
+    annotations: {}
+function_worker:
+  component: function-worker
+  replicaCount: 1
+  ports:
+    http: 6750
+    https: 6751
+  podManagementPolicy: Parallel
+  podMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 60s
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
+  rbac:
+    limit_to_namespace: true
+  waitBrokerTimeout: 120
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    readiness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    startup:
+      enabled: false
+      failureThreshold: 30
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+  affinity:
+    anti_affinity: true
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: preferredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  nodeSelector: {}
+  appAnnotations: {}
+  annotations: {}
+  tolerations: []
+  gracePeriod: 30
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 0.2
+  initContainers: []
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraEnvs: []
+  service:
+    annotations: {}
+  headlessService:
+    annotations: {}
+  pdb:
+    usePolicy: true
+    maxUnavailable: 1
+  service_account:
+    annotations: {}
+  configData:
+    PULSAR_MEM: "-Xms128m -Xmx256m -XX:MaxDirectMemorySize=256m\n"
+    PULSAR_GC: "-XX:+UseG1GC\n"
+proxy:
+  component: proxy
+  replicaCount: 1
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 3
+    metrics:
+    behavior:
+  updateStrategy:
+    type: RollingUpdate
+  initContainers: []
+  podMonitor:
+    enabled: true
+    interval: 60s
+    scrapeTimeout: 60s
+    dropUnderscoreCreatedMetrics:
+      enabled: true
+    metricRelabelings:
+  restartPodsOnConfigMapChange: false
   nodeSelector:
     workload: pulsar
-
+  probe:
+    liveness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    readiness:
+      enabled: true
+      failureThreshold: 10
+      initialDelaySeconds: 30
+      periodSeconds: 10
+      timeoutSeconds: 5
+    startup:
+      enabled: false
+      failureThreshold: 30
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      timeoutSeconds: 5
+  affinity:
+    anti_affinity: false
+    anti_affinity_topology_key: kubernetes.io/hostname
+    type: requiredDuringSchedulingIgnoredDuringExecution
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  waitZookeeperTimeout: 600
+  waitOxiaTimeout: 600
+  waitBrokerTimeout: 120
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 1
+    limits:
+      memory: 768Mi
+      cpu: 1
+  extraVolumes: []
+  extraVolumeMounts: []
+  extraEnvs: []
+  service_account:
+    annotations: {}
+  configData:
+    PULSAR_MEM: "-Xms256m -Xmx256m -XX:MaxDirectMemorySize=256m\n"
+    PULSAR_GC: "-XX:+UseZGC -XX:+ZGenerational -XX:+AlwaysPreTouch -XX:+UseTransparentHugePages
+      -XX:+ExitOnOutOfMemoryError -XX:+DisableExplicitGC -XX:+PerfDisableSharedMem\n"
+    httpNumThreads: '8'
+  additionalCommand:
+  ports:
+    http: 80
+    https: 443
+    pulsar: 6650
+    pulsarssl: 6651
+    containerPorts:
+      http: 8080
+      https: 8443
+  service:
+    type: ClusterIP
+    annotations: {}
+    loadBalancerIP: ''
+    nodePorts:
+      http: '31380'
+      https: '31390'
+      pulsar: '31650'
+      pulsarssl: '31651'
+  ingress:
+    enabled: false
+    annotations: {}
+    ingressClassName: ''
+    tls:
+      enabled: false
+      secretName: ''
+    hostname: ''
+    path: "/"
+    pathType: ImplementationSpecific
+  pdb:
+    usePolicy: true
+    maxUnavailable: 1
+toolset:
+  component: toolset
+  useProxy: false
+  replicaCount: 1
+  initContainers: []
+  restartPodsOnConfigMapChange: false
+  nodeSelector:
+    workload: pulsar
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  gracePeriod: 30
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 0.1
+  extraVolumes: []
+  extraVolumeMounts: []
+  service_account:
+    annotations: {}
+  configData:
+    PULSAR_MEM: "-Xms128M -Xmx128M -XX:MaxDirectMemorySize=128M\n"
+  additionalCommand:
 victoria-metrics-k8s-stack:
+  enabled: true
   victoria-metrics-operator:
+    enabled: true
+    crds:
+      plain: true
+    operator:
+      disable_prometheus_converter: true
     nodeSelector:
       workload: pulsar
     tolerations:
-      - key: dedicated
-        operator: Equal
-        value: pulsar
-        effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
   vmsingle:
+    enabled: true
     spec:
+      retentionPeriod: 10d
       nodeSelector:
         workload: pulsar
       tolerations:
-        - key: dedicated
-          operator: Equal
-          value: pulsar
-          effect: NoSchedule
-  vmagent:
-    spec:
-      nodeSelector:
-        workload: pulsar
-      tolerations:
-        - key: dedicated
-          operator: Equal
-          value: pulsar
-          effect: NoSchedule
-  grafana:
-    nodeSelector:
-      workload: pulsar
-    tolerations:
       - key: dedicated
         operator: Equal
         value: pulsar
         effect: NoSchedule
-    # The benchmark cluster is intentionally independent of public dashboard
-    # download endpoints. Metrics collection remains enabled.
-    dashboards: null
+      storage:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 47Gi
+        storageClassName: local-prometheus-1
+  vmagent:
+    enabled: true
+    spec:
+      nodeSelector:
+        workload: pulsar
+      tolerations:
+      - key: dedicated
+        operator: Equal
+        value: pulsar
+        effect: NoSchedule
+  vmalert:
+    enabled: false
+  alertmanager:
+    enabled: false
+  grafana:
+    enabled: true
+    adminPassword:
+    nodeSelector:
+      workload: pulsar
+    tolerations:
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+    persistence:
+      enabled: true
+      storageClassName: local-grafana
+      size: 19Gi
+    sidecar:
+      dashboards:
+        enabled: false
+    grafana.ini:
+      analytics:
+        check_for_updates: false
+      dashboards:
+        default_home_dashboard_path: "/var/lib/grafana/dashboards/pulsar/overview.json"
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+        - name: beijing-1
+          orgId: 1
+          folder: Pulsar
+          type: file
+          disableDeletion: true
+          editable: true
+          allowUiUpdates: true
+          options:
+            path: "/var/lib/grafana/dashboards/default"
+        - name: oxia
+          orgId: 1
+          folder: Oxia
+          type: file
+          disableDeletion: true
+          editable: true
+          allowUiUpdates: true
+          options:
+            path: "/var/lib/grafana/dashboards/oxia"
+        - name: pulsar
+          orgId: 1
+          folder: Pulsar
+          type: file
+          disableDeletion: true
+          editable: true
+          allowUiUpdates: true
+          options:
+            path: "/var/lib/grafana/dashboards/pulsar"
+    dashboards:
   prometheus-node-exporter:
+    enabled: true
+    hostRootFsMount:
+      enabled: false
     nodeSelector:
       workload: pulsar
   kube-state-metrics:
+    enabled: true
     nodeSelector:
       workload: pulsar
     tolerations:
-      - key: dedicated
-        operator: Equal
-        value: pulsar
-        effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: pulsar
+      effect: NoSchedule
+  kubelet:
+    enabled: true
+  kubeApiServer:
+    enabled: true
+  kubeControllerManager:
+    enabled: true
+    vmScrape:
+      spec:
+        endpoints:
+        - bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          port: http-metrics
+          scheme: https
+          tlsConfig:
+            caFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            insecureSkipVerify: true
+  coreDns:
+    enabled: true
+  kubeEtcd:
+    enabled: true
+  kubeScheduler:
+    enabled: true
+    vmScrape:
+      spec:
+        endpoints:
+        - bearerTokenFile: "/var/run/secrets/kubernetes.io/serviceaccount/token"
+          port: http-metrics
+          scheme: https
+          tlsConfig:
+            caFile: "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+            insecureSkipVerify: true
+pulsar_manager:
+  component: pulsar-manager
+  replicaCount: 1
+  initContainers: []
+  restartPodsOnConfigMapChange: false
+  nodeSelector:
+    workload: pulsar
+  topologySpreadConstraints: []
+  appAnnotations: {}
+  annotations: {}
+  tolerations:
+  - key: dedicated
+    operator: Equal
+    value: pulsar
+    effect: NoSchedule
+  extraVolumes: []
+  extraVolumeMounts: []
+  gracePeriod: 30
+  resources:
+    requests:
+      memory: 250Mi
+      cpu: 0.1
+    limits:
+      memory: 506Mi
+      cpu: 0.1
+  configData:
+    REDIRECT_HOST: http://127.0.0.1
+    REDIRECT_PORT: '9527'
+    LOG_LEVEL: INFO
+    URL: jdbc:postgresql://127.0.0.1:5432/pulsar_manager
+    DRIVER_CLASS_NAME: org.postgresql.Driver
+    PULSAR_PEEK_MESSAGE: 'true'
+  volumes:
+    persistence: true
+    data:
+      name: data
+      size: 10Gi
+      local_storage: true
+      storageClassName: local-path
+      selector: {}
+  service:
+    type: ClusterIP
+    port: 9527
+    targetPort: 9527
+    annotations: {}
+  adminService:
+    type: ClusterIP
+    port: 7750
+    targetPort: 7750
+    annotations: {}
+  ingress:
+    enabled: false
+    annotations: {}
+    ingressClassName: ''
+    tls:
+      enabled: false
+      secretName: ''
+    hostname: ''
+    path: "/"
+    pathType: ImplementationSpecific
+  admin:
+    existingSecret: ''
+    ui_username: pulsar
+    ui_password: ''
+    db_username: pulsar
+    db_password: ''
+dekaf:
+  component: dekaf
+  deployment:
+    annotations: {}
+    podAnnotations: {}
+    nodeSelector: {}
+    tolerations: []
+    extraVolumes: []
+    extraVolumeMounts: []
+    extraContainers: []
+    extraEnv: []
+    resources:
+      requests:
+        memory: 768Mi
+        cpu: 100m
+      limits:
+        memory: 4096Mi
+        cpu: 4000m
+    livenessProbe:
+      httpGet:
+        path: "/health"
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+      initialDelaySeconds: 5
+    readinessProbe:
+      httpGet:
+        path: "/health"
+        port: http
+        scheme: HTTP
+      periodSeconds: 5
+  service:
+    annotations: {}
+    port: 8090
+  persistence:
+    enabled: true
+    storageClass:
+    size: 2Gi
+    labels: {}
+    annotations: {}
+    accessModes:
+    - ReadWriteOnce
+job:
+  annotations: {}
+  ttl:
+    enabled: false
+    secondsAfterFinished: 3600
+initContainer:
+  resources:
+    requests:
+      memory: 256Mi
+      cpu: 0.1
+extraDeploy: []
