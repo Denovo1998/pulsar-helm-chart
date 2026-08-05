@@ -765,7 +765,7 @@ pulsar_admin() {
 if ! pulsar_admin tenants get "${tenant}" > "${run_dir}/tenant-before.json" 2>/dev/null; then
   pulsar_admin tenants create "${tenant}" --allowed-clusters "${cluster}"
 fi
-if ! pulsar_admin namespaces get "${tenant}/${benchmark_namespace}" \
+if ! pulsar_admin namespaces get-persistence "${tenant}/${benchmark_namespace}" \
     > "${run_dir}/namespace-before.json" 2>/dev/null; then
   pulsar_admin namespaces create "${tenant}/${benchmark_namespace}"
 fi
