@@ -765,7 +765,10 @@ pulsar_admin() {
 if ! pulsar_admin tenants get "${tenant}" > "${run_dir}/tenant-before.json" 2>/dev/null; then
   pulsar_admin tenants create "${tenant}" --allowed-clusters "${cluster}"
 fi
-pulsar_admin namespaces create "${tenant}/${benchmark_namespace}"
+if ! pulsar_admin namespaces get "${tenant}/${benchmark_namespace}" \
+    > "${run_dir}/namespace-before.json" 2>/dev/null; then
+  pulsar_admin namespaces create "${tenant}/${benchmark_namespace}"
+fi
 pulsar_admin namespaces set-persistence \
   --bookkeeper-ensemble 3 \
   --bookkeeper-write-quorum 3 \
@@ -776,9 +779,34 @@ pulsar_admin namespaces get-persistence \
   "${tenant}/${benchmark_namespace}" \
   > "${run_dir}/namespace-persistence.json"
 
+ensure_smoke_topic() {
+  local topic_name="$1"
+  local stats_file="$2"
+  local attempts=12
+  local attempt
+  local log_file="${run_dir}/smoke-topic-ensure.log"
+
+  : > "${log_file}"
+  for ((attempt = 1; attempt <= attempts; attempt++)); do
+    if pulsar_admin topics stats "${topic_name}" > "${stats_file}" 2>>"${log_file}"; then
+      return 0
+    fi
+    printf 'topic ensure attempt %d/%d\n' "${attempt}" "${attempts}" >> "${log_file}"
+    if pulsar_admin topics create "${topic_name}" >> "${log_file}" 2>&1 \
+        && pulsar_admin topics stats "${topic_name}" > "${stats_file}" 2>>"${log_file}"; then
+      return 0
+    fi
+    if ((attempt < attempts)); then
+      sleep 5
+    fi
+  done
+
+  cat "${log_file}" >&2
+  die "could not create or inspect smoke topic after ${attempts} attempts: ${topic_name}"
+}
+
 if [[ "${stage}" == "A" || "${stage}" == "B" ]]; then
-  pulsar_admin topics create "${topic}"
-  pulsar_admin topics stats "${topic}" > "${run_dir}/smoke-topic-stats.json"
+  ensure_smoke_topic "${topic}" "${run_dir}/smoke-topic-stats.json"
 fi
 
 {
