@@ -1286,7 +1286,7 @@ victoria-metrics-k8s-stack:
     enabled: false
   grafana:
     enabled: true
-    adminPassword:
+    adminPassword: admin
     nodeSelector:
       workload: pulsar
     tolerations:
@@ -1338,6 +1338,68 @@ victoria-metrics-k8s-stack:
           options:
             path: "/var/lib/grafana/dashboards/pulsar"
     dashboards:
+      default:
+        victoriametrics:
+          gnetId: 10229
+          revision: 38
+          datasource: VictoriaMetrics
+        kubernetes:
+          gnetId: 14205
+          datasource: VictoriaMetrics
+      oxia:
+        oxia-containers:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-containers.json
+        oxia-coordinator:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-coordinator.json
+        oxia-golang:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-golang.json
+        oxia-grpc:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-grpc.json
+        oxia-nodes:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-nodes.json
+        oxia-overview:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-overview.json
+        oxia-shards:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/oxia/oxia-shards.json
+      pulsar:
+        bookkeeper-compaction:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/bookkeeper-compaction.json
+        bookkeeper:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/bookkeeper.json
+        broker-cache-by-broker:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/broker-cache-by-broker.json
+        broker-cache:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/broker-cache.json
+        connector-sink:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/connector-sink.json
+        connector-source:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/connector-source.json
+        functions:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/functions.json
+        jvm:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/jvm.json
+        load-balancing:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/load-balancing.json
+        messaging:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/messaging.json
+        namespace:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/namespace.json
+        node:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/node.json
+        offloader:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/offloader.json
+        overview-by-broker:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/overview-by-broker.json
+        overview:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/overview.json
+        proxy:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/proxy.json
+        sockets:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/sockets.json
+        topic:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/topic.json
+        zookeeper:
+          url: https://raw.githubusercontent.com/lhotari/pulsar-grafana-dashboards/master/pulsar/zookeeper.json
   prometheus-node-exporter:
     enabled: true
     hostRootFsMount:
