@@ -20,7 +20,7 @@
 set -euo pipefail
 
 readonly APACHE_PULSAR_SHA="8dae0236c0a0d405ed7f8303081080520fe91551"
-readonly NEREUS_PULSAR_SHA="1be61b1b3aae920668b0143907ec73b922fdb5f7"
+readonly NEREUS_PULSAR_SHA="11d7ab15291ca4bbc9cc29dedd7878c4e1311ec9"
 
 usage() {
   cat <<'EOF'
