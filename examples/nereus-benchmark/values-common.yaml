@@ -814,7 +814,7 @@ broker:
     preciseTopicPublishRateLimiterEnable: 'true'
     bookkeeperClientSpeculativeReadTimeoutInMillis: '2000'
     loadManagerClassName: org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl
-    loadBalancerLoadSheddingStrategy: org.apache.pulsar.broker.loadbalance.extensions.scheduler.TransferShedder
+    loadBalancerLoadSheddingStrategy: org.apache.pulsar.broker.loadbalance.impl.ThresholdShedder
     loadBalancerDebugModeEnabled: 'false'
     loadBalancerBrokerLoadTargetStd: '0.1'
     managedLedgerCursorMaxEntriesPerLedger: '200000'

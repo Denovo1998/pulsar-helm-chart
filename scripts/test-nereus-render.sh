@@ -147,6 +147,14 @@ if grep -Eq '^[[:space:]]*workload: app$' "${seaweedfs_manifest}"; then
 fi
 grep -F 'pulsar-nereus-admin' "${stage_b_manifest}" >/dev/null \
   || die "stage B did not render the Nereus admin ConfigMap"
+grep -F \
+  'loadManagerClassName: org.apache.pulsar.broker.loadbalance.impl.ModularLoadManagerImpl' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "benchmark stages must use ModularLoadManagerImpl"
+grep -F \
+  'loadBalancerLoadSheddingStrategy: org.apache.pulsar.broker.loadbalance.impl.ThresholdShedder' \
+  "${stage_b_manifest}" >/dev/null \
+  || die "ModularLoadManagerImpl must use a compatible load-shedding strategy"
 grep -F 'PULSAR_PREFIX_nereusBookKeeperPrimaryWalEnabled: "true"' \
   "${stage_b_manifest}" >/dev/null \
   || die "stage B did not expose the Nereus BookKeeper runtime flag"
