@@ -30,7 +30,8 @@ under the License.
 - A–E 使用同一份 campaign identity 和 Secret
 - SeaweedFS 固定 4 CPU/4 GiB，OMB 固定两个 2 CPU/6 GiB worker
 - 每个 `(suite, rate, stage, repetition)` 测试后执行冷重置，再安装下一组
-- OMB release 在整个 campaign 中保持运行，不参与每轮 Pulsar 冷重置
+- OMB 镜像 identity 在整个 campaign 中固定，但每个正式 run 使用全新的 OMB
+  Helm release；上一 run 归档后同时卸载 OMB 和冷重置 Pulsar 数据
 
 `deploy-nereus-stage.sh` 内部执行 `helm install`。不要再额外执行一遍
 `helm install`。`reset-nereus-benchmark-stage.sh --execute` 内部执行
@@ -501,6 +502,55 @@ kubectl get pv \
 
 Oxia 每次冷安装需要至少三个 `local-zk`、47 Gi、`Available` 的 PV。
 
+### 4.1 journal/ledger 盘基线（只在维护窗口执行）
+
+磁盘基线和 OMB 正式负载不能同时运行。只有在 Pulsar workload 已停止、目标
+Bookie 没有使用待测目录，并确认测试文件不存在时才执行 `fio`。不要把已有
+ledger/journal 文件作为 `--filename`，也不要在正式 run 前后临时改变文件系统、
+mount option 或 BookKeeper 目录映射。
+
+下面的 QD1 `fdatasync` 用来测 journal 的持久化延迟下限；使用 4 GiB 滚动文件，
+避免 `--size=1k` 反复覆盖同一页产生过于理想化的结果：
+
+```bash
+mkdir -p /root/denovo/nereus-campaign/storage-baseline
+test ! -e /data/journal0/journal0/nereus-fio-journal.tmp
+
+fio \
+  --name=journal-fdatasync-q1 \
+  --filename=/data/journal0/journal0/nereus-fio-journal.tmp \
+  --rw=write \
+  --bs=4k \
+  --size=4G \
+  --ioengine=sync \
+  --iodepth=1 \
+  --direct=0 \
+  --fdatasync=1 \
+  --time_based \
+  --runtime=120 \
+  --group_reporting \
+  --refill_buffers \
+  --unlink=1 \
+  --output-format=json \
+  --output=/root/denovo/nereus-campaign/storage-baseline/journal0-fdatasync-q1.json
+```
+
+必须对实际映射到 4 个 Bookie 的每块 journal 盘分别执行并归档 JSON。64 KiB、
+QD64 的随机/顺序测试是饱和吞吐证据，其 `clat` 主要包含排队时间，不能拿来代表
+单次 BookKeeper journal sync 的延迟下限。
+
+2026-08-08 已提供的 `/data/journal0/journal0` `fsync=1` 样本为：sync P50
+`14.016 us`、P99 `50.944 us`、约 `15.6k IOPS`。这说明该 NVMe journal 的
+空载同步延迟与论文 `arXiv:2603.29113v1` 报告的约 `0.02 ms` NVMe journal
+处于同一数量级，且该样本 P50 更低；但它使用 `size=1k`，只作为排除介质下限
+的诊断证据，正式归档仍使用上面的滚动文件方法。
+
+目前单块 `/data/ledger1` 的 64 KiB QD64 随机写样本只有约 `29.5 MiB/s`、
+`135.8 ms` clat，提示 ledger/writeback 侧可能比 journal 更早成为瓶颈。正式
+OMB 运行中还必须同步采集每个 Bookie 的 journal queue、add-entry、ledger
+flush、磁盘 util/await、CPU、GC 和网络；不能仅凭 journal `fio` 宣布存储路径
+通过。
+
 ## 5. 生成 campaign identity
 
 只在 Stage A 之前生成一次，A–E 共用。先确认镜像 manifest 和
@@ -578,7 +628,8 @@ test -r "${NEREUS_OPERATOR_EVIDENCE_FILE}"
 
 ## 8. 构建并部署 OMB
 
-OMB release 固定为 `pulsar/omb`，在 A–E 之间保持运行。当前 Helm
+OMB release 固定为 `pulsar/omb`，镜像 identity 在 A–E 之间保持不变，但 release
+必须在每个正式 run 前重新安装。当前 Helm
 driver Pod 只写入 `example-run.sh` 后执行 `tail -f /dev/null`；正式
 coordinator 由 `denovo-win-1` 上的 `run-case.sh` 启动。镜像构建、
 `helm upgrade --install` 和 rollout 检查都在主节点执行；worker 地址文件
@@ -919,11 +970,46 @@ worker，逐个检查真实的 `/counters-stats` 端点，最后才原子替换�
 )
 ```
 
+### 8.5 每个正式 run 使用全新的 OMB release
+
+第 8.4 节既用于首次安装，也用于后续 run 的重新安装。开始下一组
+`(suite, rate, stage, repetition)` 前，必须确认上一 run 的 coordinator 已退出、
+结果和 manifest 已归档，然后卸载 OMB：
+
+```bash
+if helm -n "${NEREUS_NAMESPACE}" status "${OMB_RELEASE}" >/dev/null 2>&1; then
+  helm -n "${NEREUS_NAMESPACE}" uninstall "${OMB_RELEASE}" --wait
+fi
+
+if kubectl -n "${NEREUS_NAMESPACE}" get pod \
+  -l app=omb \
+  -o name | grep -q .; then
+  kubectl -n "${NEREUS_NAMESPACE}" wait \
+    --for=delete pod \
+    -l app=omb \
+    --timeout=5m
+fi
+
+test -z "$(
+  kubectl -n "${NEREUS_NAMESPACE}" get pod \
+    -l app=omb \
+    -o name
+)"
+```
+
+不要重新构建或轮换 OMB image；继续使用 campaign 固化的
+`IMAGE_REF/IMAGE_DIGEST/SOURCE_SHA` 和同一份 values，重新执行第 8.4 节的
+`helm template`、`helm upgrade --install`、rollout 与 CPU placement 门禁。
+新 Pod IP 就绪后，必须在 apps 节点重新生成 `omb-workers.yaml`，并确认两个新的
+`/counters-stats` 端点返回 HTTP 200；旧 worker 地址不能进入下一 run。
+
 ## 9. 单次冷启动测试闭环
 
 一次测试只允许一个 `(suite, rate, stage, repetition)`。即使 Stage 相同，
 更换 rate、message size 或 suite 也必须执行冷重置并重新安装。不要在一个
-Pulsar deployment 上连续跑多个正式用例。
+Pulsar deployment 或同一组 OMB Pod 上连续跑多个正式用例。每次进入 9.1 前先
+完成 8.5 的 OMB release 重部署；随后部署 Pulsar Stage，再执行 warm-up 和
+measurement。
 
 ### 9.1 控制节点安装一个 Stage
 
@@ -1225,12 +1311,52 @@ jq -r \
   '.runtimeInfo.attributes["persistence.managedLedgerStorageClassName"]' \
   "${RESULT_DIR}/manifest.json"
 
+jq -e '
+  .warmupDrainApplied == true and
+  .warmupDrainAcknowledgementTrackingSupported == true and
+  .warmupDrainMessageSendErrors == 0 and
+  .warmupDrainAckErrors == 0 and
+  .warmupDrainInFlightSends == 0 and
+  .warmupDrainAckInFlight == 0 and
+  .warmupDrainMessagesAcknowledged == .warmupDrainMessagesReceived and
+  .warmupDrainBacklogMessages == 0 and
+  .warmupDrainBrokerBacklogMessages == 0 and
+  .warmupDrainBrokerBacklogZeroPolls >= 2 and
+  .measurementDrainApplied == true and
+  .measurementDrainAcknowledgementTrackingSupported == true and
+  .measurementDrainMessageSendErrors == 0 and
+  .measurementDrainAckErrors == 0 and
+  .measurementDrainInFlightSends == 0 and
+  .measurementDrainAckInFlight == 0 and
+  .measurementDrainMessagesAcknowledged == .measurementDrainMessagesReceived and
+  .measurementDrainBacklogMessages == 0 and
+  .measurementDrainBrokerBacklogMessages == 0 and
+  .measurementDrainBrokerBacklogZeroPolls >= 2 and
+  .measurementDurationSeconds > 0 and
+  (.measurementStartedAt | type == "string" and length > 0) and
+  (.measurementEndedAt | type == "string" and length > 0) and
+  (.measurementCompletedAt | type == "string" and length > 0)
+' "${RESULT_DIR}/result.json"
+
 ./scripts/nereus-benchmark/analyze-run.py \
-  "${RESULT_DIR}/result.json" |
+  "${RESULT_DIR}/result.json" \
+  --target-rate 10000 \
+  --max-publish-p50-ms 18.1 \
+  --max-publish-p99-ms 38 |
 tee "${RESULT_DIR}/analysis.json"
+
+jq -e \
+  '.sustainability.dataPlanePass and .latencyGate.pass' \
+  "${RESULT_DIR}/analysis.json"
 ```
 
-A/B 必须输出 `bookkeeper`，C/D/E 必须输出 `nereus`。
+A/B 必须输出 `bookkeeper`，C/D/E 必须输出 `nereus`。上面的两个 clean-boundary
+断言确保正式窗口开始前及结束后，producer/ACK in-flight、worker delivery backlog
+和 Pulsar subscription backlog 都已清零，ACK tracking 可用且 acknowledged count
+与 received count 一致。失败的 producer ACK 仍可能对应后台最终提交的 append；
+所以 `INVALID` run 必须保留失败证据，然后按 9.5–9.6 归档、卸载 OMB 并 cold reset
+Pulsar，不能在原集群/worker 上直接重跑。`analysis.json` 的 data-plane gate 仍不能
+替代本轮 CPU、网络、Bookie、Broker 和磁盘证据。
 
 如果 OMB 被中断，先对两个 worker 显式执行 `stop-all`，不得直接进入清理：
 
@@ -1290,7 +1416,7 @@ Kubernetes deletion plugin，脚本会在数据已擦除后删除 PV 对象；�
 - `pulsar` namespace；
 - `pulsar-nereus-secrets`；
 - campaign identity 和已归档 evidence；
-- 长期运行的 `pulsar/omb` release。
+- 独立管理的 `pulsar/omb` release；调用方仍须按第 8.5 节显式卸载它。
 
 如果 Helm 卸载删除了 `${NEREUS_RELEASE}-grafana` PVC，reset 会只解绑定其静态
 PV、保留 Grafana 数据，不会把它计入 16 个核心 benchmark PVC。benchmark
@@ -1307,13 +1433,14 @@ kubectl get pv \
 
 确认 `pulsar/nereus` 和 16 个核心数据 PVC 均不存在，Retain PV 是
 `Available`，并按第 4 节重新 apply 后确认所需静态 PV 都是 `Available`，才能
-安装下一次测试。
+安装下一次测试。下一 run 开始前还必须确认旧 `pulsar/omb` release 已不存在，
+再按第 8.4 节使用同一不可变镜像重新安装。
 
 ## 10. Workload 选择与命令
 
 | Suite | 文件 | 用途 | 当前参数 |
 | --- | --- | --- | --- |
-| S1 | `s1-smoke.yaml` | 部署 smoke | 16 partitions、50k msg/s、2 分钟 |
+| S1 | `s1-smoke.yaml` | 部署/边界 smoke | 16 partitions、10k msg/s、2 分钟 warm-up、5 分钟正式窗口 |
 | C1 | `c1-throughput-template.yaml` | 最大可持续吞吐 | 48 partitions、显式 rate |
 | L1 | `l1-latency-template.yaml` | 固定负载延迟 | common ceiling 的 25/50/75% |
 | B1 | `b1-backlog-50g.yaml` | backlog/drain | 50 GiB backlog |
@@ -1327,8 +1454,11 @@ kubectl get pv \
 
 ```bash
 BLOCK_ID=block-01-c1
-RATE=100000
+RATE=5000
 RUN_ID="${BLOCK_ID}-stage-${STAGE}-rep-${REPETITION}-rate-${RATE}"
+
+export NEREUS_MAX_PUBLISH_P50_MS=18.1
+export NEREUS_MAX_PUBLISH_P99_MS=38
 
 taskset -c 12-15 \
   ./scripts/nereus-benchmark/run-c1-sweep.sh \
@@ -1343,16 +1473,60 @@ taskset -c 12-15 \
 `run-c1-sweep.sh` 会自行渲染 driver 和 workload；不要使用 9.2 中为 S1
 生成的 `DRIVER_YAML`。在运行前使用上面的 C1 `RUN_ID` 执行 9.3，运行后使用
 同一个 `RUN_ID` 执行 9.5–9.6。下一 rate 必须重新安装对应 Stage。禁止省略
-最后的 `RATE` 参数，否则脚本会在同一集群上连续执行 10 个 candidate，不
-符合本 campaign 的冷启动要求。
+最后的 `RATE` 参数；脚本会直接拒绝参数缺失或多 rate 调用。
 
-初始候选 rate：
+当前服务器先使用保守候选梯度：
 
 ```text
-50000 75000 100000 150000 200000 300000 400000 600000 800000 1000000
+5000 10000 15000 20000 25000 30000 40000 50000
 ```
 
-共同可持续上限取 A–E 五组可持续上限的最小值。
+每个 rate 在 A、B 各做至少 3 次独立冷启动，repetition 的 Stage 顺序按
+`A/B`、`B/A` 交替。只有以下条件同时成立才算该次 data-plane sustainable：
+
+- warm-up 和 measurement final boundary 的 send/ACK errors、send/ACK in-flight、
+  worker/broker backlog 均为 0，ACK count 完整，broker zero poll 至少连续两次；
+- publish average 至少达到 target 的 98%；
+- consume average 至少达到 publish average 的 99%；
+- publish error ratio 小于 `1e-6`；
+- 后半窗口 backlog 和 in-flight 没有持续增长；
+- 结束 backlog 不超过 5 秒 target 流量；
+- 外部 CPU、网络、Broker、Bookie、GC 和磁盘证据没有到达 campaign 上限。
+
+不要把 A、B 的实际观测速率人为改成完全相同；两边使用完全相同的 offered
+rate，并用上述容差判断是否都真正承载。最高的共同通过 rate 才是
+`commonABCapacityRate`。收集全部 `analysis.json` 后执行：
+
+```bash
+find "results/${CAMPAIGN_ID}" \
+  -path '*rate-*/analysis.json' \
+  -print0 |
+xargs -0 ./scripts/nereus-benchmark/select-common-rate.py \
+  --stages A,B \
+  --min-repetitions 3 \
+  > "results/${CAMPAIGN_ID}/common-ab-capacity.json"
+```
+
+论文延迟只作为同负载操作点的比较门槛，不能用来伪装容量结果。当前硬件先用
+publish P50 `18.1 ms`、P99 `38 ms` 作为论文范围内的诊断 envelope；P50
+`4 ms`、P99 `8 ms` 作为接近论文 50k/1.5M 环境的 stretch goal。选取 A、B
+都通过诊断 envelope 的最高共同 rate：
+
+```bash
+find "results/${CAMPAIGN_ID}" \
+  -path '*rate-*/analysis.json' \
+  -print0 |
+xargs -0 ./scripts/nereus-benchmark/select-common-rate.py \
+  --stages A,B \
+  --min-repetitions 3 \
+  --require-latency-gate \
+  > "results/${CAMPAIGN_ID}/common-ab-latency-rate.json"
+```
+
+如果 `50k` 全部通过，再按约 1.5 倍增量扩展梯度；若某一 Stage 连续失败，先在
+最后共同 PASS 与首次 FAIL 之间加点，不直接跳到论文的吞吐规模。完整 A–E
+campaign 的共同上限仍取五个 Stage sustainable ceiling 的最小值，不能用
+`commonABCapacityRate` 代替。
 
 ### 10.2 L1、R1 和 M1 替换模板 rate
 
@@ -1476,14 +1650,19 @@ tee "${RESULT_DIR}/analysis.json"
 
 推荐顺序：
 
-1. A–E 各运行一次 S1，验证部署、storage class、CPUSet 和 evidence；
-2. 对 C1 每个 candidate rate，依次运行 A–E，每次都冷重置；
-3. 取 A–E sustainable ceiling 的最小值作为 common ceiling；
-4. L1 分别运行 common ceiling 的 25%、50%、75%；
-5. 独立运行 B1；
-6. 独立运行 R1；
-7. M1 的 100 B、1 KiB、10 KiB 分别运行独立 rate sweep；
-8. 新 repetition 使用新的 block/seed，并按预定 Stage 顺序轮换。
+1. A、B 各运行一次 10k S1，先验证 clean boundary、storage class、CPUSet 和
+   evidence；
+2. 对 C1 的保守 candidate rate，在 A、B 各做 3 次独立冷启动并交替 Stage
+   顺序；
+3. 分别生成 `commonABCapacityRate` 和带论文延迟 envelope 的
+   `commonABLatencyRate`，A/B 报告使用同一个 target rate；
+4. 需要完整 A–E campaign 时，再对 C/D/E 执行 S1 和相同 C1 规则，取五个
+   Stage sustainable ceiling 的最小值作为 full common ceiling；
+5. L1 分别运行相应 common ceiling 的 25%、50%、75%；
+6. 独立运行 B1；
+7. 独立运行 R1；
+8. M1 的 100 B、1 KiB、10 KiB 分别运行独立 rate sweep；
+9. 新 repetition 使用新的 block/seed，并按预定 Stage 顺序轮换。
 
 同一 block 内 A–E 使用完全相同的 seed、OMB image digest、两个 worker、
 CPU/memory、placement、compression 和 workload。任一条件改变都必须开始
@@ -1534,5 +1713,7 @@ SeaweedFS 1。VMSingle 和 Grafana 的监控持久化卷不在该集合中。如
 因为 namespace 固定为共享的 `pulsar`：
 
 - 不要执行 `kubectl delete namespace pulsar`；
-- 不要在每轮卸载 `pulsar/omb`；
-- 整个 campaign 结束后才执行 `helm uninstall omb -n pulsar`。
+- 不要把 OMB 卸载塞进 Pulsar PVC reset 脚本；
+- 每轮证据归档后按第 8.5 节显式卸载 `pulsar/omb`，下一轮使用相同 image
+  identity 重新安装；
+- 整个 campaign 结束后不再保留最后一轮 OMB release。

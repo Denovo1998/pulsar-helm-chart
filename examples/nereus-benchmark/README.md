@@ -293,12 +293,24 @@ fail-closed matrix:
 ./scripts/test-nereus-render.sh
 ```
 
-## 5. Deploy, measure, and cold-reset each stage
+## 5. Redeploy OMB, deploy, measure, and cold-reset each stage
 
 Keep the exports from section 2 in the same shell. Deployment fails before any
 Kubernetes mutation if the context differs, the campaign identity/evidence is
 missing, an image/identity placeholder remains, the Helm release still exists,
 or a data PVC from the previous stage remains.
+
+Each formal `(suite, rate, stage, repetition)` also uses a newly installed OMB
+release. Build the OMB image once and keep its `IMAGE_REF`, `IMAGE_DIGEST`, and
+`SOURCE_SHA` fixed across A--E, but stop the previous coordinator, archive its
+result, uninstall `pulsar/omb`, reinstall it from the same immutable image, and
+regenerate the worker URL file before deploying the next Pulsar stage. This
+removes worker JVM and local-counter state without changing the client binary.
+Both the pre-measurement and final measurement boundaries must show zero send
+and ACK errors, zero send/ACK in-flight, matching received/acknowledged counts,
+and two consecutive zero broker-backlog polls. Treat a missing or failed
+boundary as `INVALID`; archive it and perform the full OMB redeploy plus Pulsar
+cold reset before retrying.
 
 ```bash
 kubectl config current-context
@@ -367,14 +379,16 @@ The deployment run records the Kubernetes context; every later gate rejects a
 different current context, release, or namespace. `collect-helm-evidence.sh`
 packages the evidence and emits an archive SHA-256.
 
-The reset script refuses to run until the evidence archive and its checksum
+The Pulsar reset script refuses to run until the evidence archive and its checksum
 exist. It uninstalls Helm, mounts every release-owned data PVC through a
 short-lived root cleaner Pod using the already imported Apache image, verifies
 that each filesystem is empty, deletes all 16 PVCs (Oxia 3, BookKeeper 12,
 SeaweedFS 1), and returns `Retain` PVs to `Available`. A failed wipe leaves the
 PVC in place and stops; rerunning the same command resumes from the recorded
 PVC/PV map. It does not delete the namespace, runtime Secret, campaign values,
-or results archive.
+or results archive. It deliberately does not uninstall the separately managed
+OMB release; the caller must uninstall OMB after archiving the run and reinstall
+it from the same image identity before the next run.
 
 After every reset, verify the storage pool before installing the next stage:
 
