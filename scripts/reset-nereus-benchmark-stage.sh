@@ -270,11 +270,15 @@ metadata:
 spec:
   restartPolicy: Never
   terminationGracePeriodSeconds: 0
-  # Local BookKeeper PVs are hosted on the tainted Pulsar node.
+  # Local benchmark PVs are hosted on either tainted workload node.
   tolerations:
     - key: dedicated
       operator: Equal
       value: pulsar
+      effect: NoSchedule
+    - key: dedicated
+      operator: Equal
+      value: apps
       effect: NoSchedule
   containers:
     - name: wipe
