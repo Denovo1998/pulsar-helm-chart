@@ -47,10 +47,10 @@ operator 和 Pulsar 核心资源，等待 operator admission webhook Ready，再
 
 本次执行固定的源码身份是：Apache Pulsar
 `8dae0236c0a0d405ed7f8303081080520fe91551`，Nereus Pulsar
-`11d7ab15291ca4bbc9cc29dedd7878c4e1311ec9`，Nereus v0.1.0
-`6a3f1d1b9c2e4fe005c93aa091858601b2592f6e`。镜像 tag 和 digest 以本次
-构建产生的 manifest 为准；不要复用旧的 `p50fc70fe`、`n1c23bc9b`、
-`n78a15445` 或 OMB `7f89b90fc30d` 镜像。
+`3667f1a5b51eeff8e7566353a92dc6e14e9bae56`，Nereus v0.1.0
+`e06f03fbe7db89030454d1060f5947a74664ae70`。镜像 tag 和 digest 以本次
+构建产生的 manifest 为准；不要复用旧的 `p50fc70fe`、`p11d7ab15`、
+`n6a3f1d1b` 或 OMB `7f89b90fc30d` 镜像。
 
 ## 0. 执行边界和开始测试前的硬门禁
 
