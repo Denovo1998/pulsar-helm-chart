@@ -89,6 +89,10 @@ spec:
   template:
     spec:
       serviceAccountName: "{{ template "pulsar.fullname" . }}-{{ .Values.broker.component }}-sts-cleanup"
+      {{- with .Values.broker.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       restartPolicy: Never
       containers:
         - name: sts-cleanup
